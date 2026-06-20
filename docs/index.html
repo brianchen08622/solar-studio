@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Solar Studio — 日照分析工具</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden}
+body{background:#0A0E13;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#D0D8D0;font-size:13px}
+#app{display:flex;flex-direction:column;width:100%;height:100%}
+/* ── Menubar ── */
+#menubar{height:36px;background:#111820;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;gap:2px;padding:0 8px;flex-shrink:0;z-index:100}
+.app-logo{font-size:14px;font-weight:700;color:#7CB87C;margin-right:6px;letter-spacing:0.5px;white-space:nowrap}
+.menu-btn{background:none;border:none;color:#A0B8A0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;white-space:nowrap}
+.menu-btn:hover{background:rgba(255,255,255,0.08)}
+.menu-sep{width:1px;height:18px;background:rgba(255,255,255,0.1);margin:0 4px;flex-shrink:0}
+.menu-spacer{flex:1}
+#proj-name-label{font-size:11px;color:#4A6A4A;white-space:nowrap}
+/* ── Main area ── */
+#main{flex:1;display:flex;overflow:hidden}
+/* ── Left panel ── */
+#left-panel{width:192px;flex-shrink:0;background:#0D1219;border-right:1px solid rgba(255,255,255,0.07);display:flex;flex-direction:column;overflow:hidden}
+/* ── Right panel ── */
+#right-panel{width:256px;flex-shrink:0;background:#0D1219;border-left:1px solid rgba(255,255,255,0.07);display:flex;flex-direction:column;overflow-y:auto}
+/* ── Viewport ── */
+#viewport{flex:1;position:relative;overflow:hidden}
+#c{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+/* ── Timeline ── */
+#timeline{height:52px;background:#0D1219;border-top:1px solid rgba(255,255,255,0.07);flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 12px}
+/* ── Panel sections ── */
+.psec{border-bottom:1px solid rgba(255,255,255,0.06)}
+.psec-head{display:flex;align-items:center;padding:8px 12px 6px;cursor:pointer;user-select:none}
+.psec-head:hover{background:rgba(255,255,255,0.03)}
+.psec-title{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#6A8A6A;font-weight:600;flex:1}
+.psec-tog{color:#4A6A4A;font-size:10px}
+.psec-body{padding:4px 8px 10px}
+/* ── Tool buttons ── */
+.tool-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px 8px 8px}
+.tool-btn{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#9AB89A;border-radius:6px;padding:8px 4px;cursor:pointer;text-align:center;font-size:10px;line-height:1.3;transition:all 0.12s;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tool-btn:hover{background:rgba(124,184,124,0.12);border-color:rgba(124,184,124,0.3)}
+.tool-btn.active{background:rgba(124,184,124,0.2);border-color:#7CB87C;color:#C0E8C0}
+.tool-icon{font-size:17px}
+/* ── Building list ── */
+#bld-list{overflow-y:auto;flex:1}
+.bld-item{display:flex;align-items:center;padding:5px 10px;cursor:pointer;gap:5px;border-bottom:1px solid rgba(255,255,255,0.03)}
+.bld-item:hover{background:rgba(255,255,255,0.04)}
+.bld-item.selected{background:rgba(124,184,124,0.12)}
+.bld-icon{font-size:13px;opacity:0.7;flex-shrink:0}
+.bld-name{flex:1;font-size:11px;color:#C0D0C0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bld-h{font-size:10px;color:#6A8A6A;flex-shrink:0}
+.bld-del{background:none;border:none;color:#664444;cursor:pointer;font-size:13px;padding:2px 4px;border-radius:3px;opacity:0;transition:opacity 0.1s;flex-shrink:0}
+.bld-item:hover .bld-del{opacity:1}
+.bld-del:hover{color:#DD6666}
+/* ── Properties ── */
+.prop-row{display:flex;align-items:center;padding:3px 0;gap:6px}
+.prop-lbl{font-size:11px;color:#7A9A7A;width:40px;flex-shrink:0}
+/* ── Scrubber ── */
+.scrubber{display:flex;align-items:center;flex:1}
+.scr-lbl{background:rgba(124,184,124,0.12);border:1px solid rgba(124,184,124,0.2);border-right:none;border-radius:4px 0 0 4px;padding:3px 6px;font-size:10px;color:#7CB87C;cursor:ew-resize;user-select:none;white-space:nowrap}
+.scr-lbl:hover{background:rgba(124,184,124,0.22)}
+.scr-inp{background:rgba(255,255,255,0.06);border:1px solid rgba(124,184,124,0.2);border-radius:0 4px 4px 0;padding:3px 5px;font-size:11px;color:#D0E8D0;width:58px;text-align:right}
+.scr-inp:focus{outline:none;border-color:#7CB87C;background:rgba(124,184,124,0.1)}
+.scr-unit{font-size:10px;color:#5A7A5A;margin-left:3px;flex-shrink:0}
+/* ── Analysis buttons ── */
+.abtn{width:100%;background:rgba(124,184,124,0.1);border:1px solid rgba(124,184,124,0.3);color:#A0C8A0;border-radius:6px;padding:7px;cursor:pointer;font-size:11px;transition:all 0.12s;margin-bottom:5px;text-align:left}
+.abtn:hover{background:rgba(124,184,124,0.2)}
+.abtn.danger{background:rgba(180,60,60,0.1);border-color:rgba(180,60,60,0.3);color:#C08080}
+.abtn.danger:hover{background:rgba(180,60,60,0.2)}
+/* ── Floor bars ── */
+.fb-row{display:flex;align-items:center;gap:5px;margin-bottom:2px}
+.fb-lbl{font-size:9px;color:#6A8A6A;width:30px;flex-shrink:0;text-align:right}
+.fb-track{flex:1;height:9px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden}
+.fb-fill{height:100%;border-radius:2px}
+.fb-val{font-size:9px;color:#9AB89A;width:28px;flex-shrink:0;text-align:right}
+/* ── Timeline ── */
+.tl-lbl{font-size:11px;color:#7A9A7A;flex-shrink:0}
+#tl-date{background:transparent;border:1px solid rgba(124,184,124,0.25);border-radius:4px;color:#C0E0C0;font-size:11px;padding:3px 5px;cursor:pointer}
+#tl-date:focus{outline:none;border-color:#7CB87C}
+.tl-wrap{display:flex;align-items:center;gap:6px;flex:1}
+#tl-slider{flex:1;accent-color:#7CB87C;cursor:pointer}
+.tl-val{font-size:14px;font-weight:600;color:#A0D8A0;min-width:44px;text-align:center;font-variant-numeric:tabular-nums}
+.play-btn{background:rgba(124,184,124,0.1);border:1px solid rgba(124,184,124,0.3);color:#9AB89A;border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all 0.12s;flex-shrink:0}
+.play-btn:hover{background:rgba(124,184,124,0.2)}
+.play-btn.active{background:rgba(124,184,124,0.3);border-color:#7CB87C;color:#C8E8C8}
+.spd-btn{font-size:11px;color:#6A8A6A;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:4px;padding:3px 6px;cursor:pointer;flex-shrink:0}
+.spd-btn:hover{color:#9AB89A}
+/* ── Overlays ── */
+#view-tog{position:absolute;top:8px;right:8px;display:flex;background:rgba(10,14,19,0.88);border:1px solid rgba(124,184,124,0.2);border-radius:6px;overflow:hidden;z-index:50}
+.vbtn{background:none;border:none;color:#7A9A7A;padding:5px 10px;cursor:pointer;font-size:11px}
+.vbtn:hover{color:#A0C8A0;background:rgba(124,184,124,0.1)}
+.vbtn.active{color:#C0E8C0;background:rgba(124,184,124,0.2)}
+#sun-info{position:absolute;bottom:8px;right:8px;background:rgba(10,14,19,0.82);border:1px solid rgba(255,200,50,0.2);border-radius:8px;padding:6px 10px;font-size:11px;color:#A0906A;z-index:50;pointer-events:none;line-height:1.7}
+.si-val{color:#E8C870}
+#hint{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:rgba(10,14,19,0.75);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:4px 12px;font-size:10px;color:#5A7A5A;z-index:50;pointer-events:none;white-space:nowrap}
+#ao{position:absolute;top:8px;left:8px;background:rgba(10,14,19,0.92);border:1px solid rgba(124,184,124,0.25);border-radius:10px;padding:10px 12px;width:200px;z-index:50;display:none}
+.ao-title{font-size:11px;font-weight:700;color:#A0C8A0;margin-bottom:6px}
+.no-sel{padding:14px 10px;text-align:center;color:#4A6A4A;font-size:11px}
+/* ── Modals ── */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:500;display:flex;align-items:center;justify-content:center}
+.modal{background:#111820;border:1px solid rgba(124,184,124,0.3);border-radius:12px;padding:20px;width:340px;max-width:90vw}
+.modal-title{font-size:14px;font-weight:700;color:#A0C8A0;margin-bottom:12px}
+.modal input[type=text]{width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(124,184,124,0.25);border-radius:6px;padding:8px 10px;color:#D0E8D0;font-size:13px;margin-bottom:10px}
+.modal input[type=text]:focus{outline:none;border-color:#7CB87C}
+.mbtn-row{display:flex;gap:8px;justify-content:flex-end}
+.btn-ok{background:rgba(124,184,124,0.25);border:1px solid #7CB87C;color:#C0E8C0;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:12px}
+.btn-ok:hover{background:rgba(124,184,124,0.4)}
+.btn-cancel{background:none;border:1px solid rgba(255,255,255,0.15);color:#9AB89A;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:12px}
+.btn-cancel:hover{background:rgba(255,255,255,0.06)}
+.proj-item{display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.04);gap:8px}
+.proj-item:hover{background:rgba(255,255,255,0.03)}
+.proj-meta{flex:1}
+.proj-nm{font-size:12px;color:#C0D0C0}
+.proj-dt{font-size:10px;color:#4A6A4A;margin-top:2px}
+.proj-load{background:rgba(124,184,124,0.1);border:1px solid rgba(124,184,124,0.2);color:#9AB89A;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer}
+.proj-load:hover{background:rgba(124,184,124,0.2)}
+.proj-del{background:none;border:none;color:#664444;cursor:pointer;font-size:14px;padding:2px 5px;border-radius:3px}
+.proj-del:hover{color:#DD6666}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(124,184,124,0.2);border-radius:2px}
+select{background:rgba(255,255,255,0.06);border:1px solid rgba(124,184,124,0.2);color:#C0D0C0;border-radius:4px;padding:4px 5px;font-size:11px;width:100%}
+select:focus{outline:none;border-color:#7CB87C}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- Menubar -->
+<div id="menubar">
+  <span class="app-logo">☀ Solar Studio</span>
+  <div class="menu-sep"></div>
+  <button class="menu-btn" onclick="newProject()">新建</button>
+  <button class="menu-btn" onclick="showProjects()">開啟</button>
+  <button class="menu-btn" onclick="showSave()">儲存</button>
+  <button class="menu-btn" onclick="downloadJSON()">匯出</button>
+  <button class="menu-btn" onclick="document.getElementById('imp').click()">匯入</button>
+  <input type="file" id="imp" accept=".json" style="display:none" onchange="importJSON(event)">
+  <div class="menu-sep"></div>
+  <button class="menu-btn" onclick="toggleAO()">分析面板</button>
+  <div class="menu-spacer"></div>
+  <span id="proj-name-label">未命名專案</span>
+</div>
+
+<!-- Main -->
+<div id="main">
+
+  <!-- Left panel -->
+  <div id="left-panel">
+    <div class="psec">
+      <div class="psec-head"><span class="psec-title">工具</span></div>
+      <div class="tool-grid">
+        <button class="tool-btn active" id="tb-select" onclick="setTool('select')"><span class="tool-icon">↖</span>選取</button>
+        <button class="tool-btn" id="tb-add" onclick="setTool('add')"><span class="tool-icon">⬛</span>矩形</button>
+        <button class="tool-btn" id="tb-poly" onclick="setTool('polygon')"><span class="tool-icon">⬟</span>多邊形</button>
+        <button class="tool-btn" id="tb-lshape" onclick="addLShape()"><span class="tool-icon">⌐</span>L形</button>
+      </div>
+    </div>
+
+    <div class="psec">
+      <div class="psec-head" onclick="toggleSec(this)"><span class="psec-title">地點</span><span class="psec-tog">▾</span></div>
+      <div class="psec-body">
+        <div class="prop-row"><span class="prop-lbl">城市</span>
+          <select id="city-sel" onchange="setCity()">
+            <option value="25.04,121.53">台北</option>
+            <option value="24.15,120.68">台中</option>
+            <option value="22.99,120.22">台南</option>
+            <option value="22.62,120.30">高雄</option>
+            <option value="35.68,139.69">東京</option>
+            <option value="31.23,121.47">上海</option>
+            <option value="22.39,114.06">香港</option>
+            <option value="1.35,103.82">新加坡</option>
+          </select>
+        </div>
+        <div class="prop-row" style="margin-top:4px"><span class="prop-lbl">緯度</span>
+          <input type="number" id="lat-inp" value="25.04" step="0.01" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(124,184,124,0.2);color:#C0D0C0;border-radius:4px;padding:3px 5px;font-size:11px" onchange="lat=parseFloat(this.value);updateSun()">
+        </div>
+      </div>
+    </div>
+
+    <div class="psec">
+      <div class="psec-head" onclick="toggleSec(this)"><span class="psec-title">場景</span><span class="psec-tog">▾</span></div>
+      <div class="psec-body">
+        <div class="prop-row"><span class="prop-lbl">格線</span>
+          <select onchange="gridSnap=parseInt(this.value)">
+            <option value="0">無</option><option value="1" selected>1m</option>
+            <option value="5">5m</option><option value="10">10m</option>
+          </select>
+        </div>
+        <div class="prop-row" style="margin-top:4px"><span class="prop-lbl">地面</span>
+          <select onchange="setGround(this.value)">
+            <option value="grid">格線</option><option value="solid">實心</option><option value="none">無</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="psec" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+      <div class="psec-head">
+        <span class="psec-title">建物清單</span>
+        <button class="btn-cancel" style="font-size:10px;padding:2px 6px;margin-left:4px" onclick="clearAll()">清除</button>
+      </div>
+      <div id="bld-list"></div>
+    </div>
+  </div>
+
+  <!-- Viewport -->
+  <div id="viewport">
+    <canvas id="c"></canvas>
+    <div id="view-tog">
+      <button class="vbtn active" id="vb3d" onclick="setViewMode('3d')">3D</button>
+      <button class="vbtn" id="vbplan" onclick="setViewMode('plan')">平面</button>
+    </div>
+    <div id="sun-info">方位角 <span class="si-val" id="si-az">—</span><br>仰角 <span class="si-val" id="si-alt">—</span></div>
+    <div id="hint">左鍵選取/移動 · 右鍵旋轉視角 · 滾輪縮放 · Del 刪除</div>
+    <div id="ao"><div class="ao-title">📊 日照分析</div><div id="ao-body"></div></div>
+  </div>
+
+  <!-- Right panel -->
+  <div id="right-panel">
+    <div class="psec">
+      <div class="psec-head"><span class="psec-title">建物屬性</span></div>
+      <div class="psec-body" id="props-body"><div class="no-sel">選取建物以編輯屬性</div></div>
+    </div>
+    <div class="psec">
+      <div class="psec-head" onclick="toggleSec(this)"><span class="psec-title">日照分析</span><span class="psec-tog">▾</span></div>
+      <div class="psec-body">
+        <button class="abtn" onclick="runFloorAnalysis()">▶ 分析選取建物各樓層</button>
+        <button class="abtn" onclick="window.print()">↓ 列印/匯出 PDF</button>
+        <div id="analysis-result"></div>
+      </div>
+    </div>
+    <div class="psec">
+      <div class="psec-head" onclick="toggleSec(this)"><span class="psec-title">時間快捷</span><span class="psec-tog">▾</span></div>
+      <div class="psec-body">
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="abtn" style="flex:1;text-align:center;margin-bottom:0" onclick="setPreset('winter')">冬至</button>
+          <button class="abtn" style="flex:1;text-align:center;margin-bottom:0" onclick="setPreset('equinox')">春分</button>
+          <button class="abtn" style="flex:1;text-align:center;margin-bottom:0" onclick="setPreset('summer')">夏至</button>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+          <button class="abtn" style="flex:1;text-align:center;margin-bottom:0" onclick="setTime(8)">早上8</button>
+          <button class="abtn" style="flex:1;text-align:center;margin-bottom:0" onclick="setTime(12)">正午</button>
+          <button class="abtn" style="flex:1;text-align:center;margin-bottom:0" onclick="setTime(16)">下午4</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Timeline -->
+<div id="timeline">
+  <span class="tl-lbl">日期</span>
+  <input type="date" id="tl-date" onchange="updateSun()">
+  <div class="tl-wrap">
+    <span class="tl-lbl">時刻</span>
+    <input type="range" id="tl-slider" min="0" max="1440" value="720" oninput="onSlider()">
+    <span class="tl-val" id="tl-val">12:00</span>
+  </div>
+  <button class="play-btn" id="play-btn" onclick="togglePlay()">▶</button>
+  <button class="spd-btn" id="spd-btn" onclick="cycleSpeed()">1×</button>
+</div>
+
+</div>
+
+<!-- Save modal -->
+<div id="save-modal" class="modal-bg" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal">
+    <div class="modal-title">💾 儲存專案</div>
+    <input type="text" id="save-name" placeholder="專案名稱...">
+    <div class="mbtn-row">
+      <button class="btn-cancel" onclick="document.getElementById('save-modal').style.display='none'">取消</button>
+      <button class="btn-ok" onclick="confirmSave()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Projects modal -->
+<div id="proj-modal" class="modal-bg" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="max-height:70vh;display:flex;flex-direction:column">
+    <div class="modal-title">📁 專案列表</div>
+    <div id="proj-list" style="overflow-y:auto;flex:1;min-height:0;margin-bottom:10px"></div>
+    <div class="mbtn-row"><button class="btn-cancel" onclick="document.getElementById('proj-modal').style.display='none'">關閉</button></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/three@0.150.0/build/three.min.js"></script>
+<script>
+// ═══════════════════════
+//  Solar Studio v1.0
+// ═══════════════════════
+const DEG = Math.PI / 180;
+
+// ── State ──
+let tool = 'select';
+let selectedId = null;
+let buildings = [];
+let nextId = 1;
+let lat = 25.04, lon = 121.53;
+let viewMode = '3d';
+let gridSnap = 1;
+let isPlaying = false;
+let playMin = 720;
+let playSpeedIdx = 0;
+const PLAY_SPEEDS = [1, 5, 15, 30];
+let currentProj = '未命名專案';
+
+// ── Renderer / Scene ──
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0x0A0E13);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0A0E13, 0.0007);
+
+// ── Cameras ──
+const perspCam = new THREE.PerspectiveCamera(45, 1, 0.5, 3000);
+const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2000);
+orthoCam.position.set(0, 500, 0);
+orthoCam.lookAt(0, 0, 0);
+orthoCam.zoom = 1;
+
+let camSph = { th: -0.5, ph: 0.85, r: 340 };
+let camTarget = new THREE.Vector3(0, 0, 0);
+
+function updateCam() {
+  const { th, ph, r } = camSph;
+  perspCam.position.set(
+    camTarget.x + r * Math.sin(ph) * Math.sin(th),
+    camTarget.y + r * Math.cos(ph),
+    camTarget.z + r * Math.sin(ph) * Math.cos(th)
+  );
+  perspCam.lookAt(camTarget);
+}
+updateCam();
+
+// ── Lights ──
+const ambient = new THREE.AmbientLight(0x334455, 0.6);
+scene.add(ambient);
+const sun = new THREE.DirectionalLight(0xFFF5D0, 1.5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 2000;
+sun.shadow.bias = -0.0002;
+scene.add(sun);
+scene.add(sun.target);
+
+// ── Ground ──
+let groundMesh = null, gridMesh = null;
+function setGround(type) {
+  if (groundMesh) { scene.remove(groundMesh); groundMesh.geometry.dispose(); groundMesh = null; }
+  if (gridMesh) { scene.remove(gridMesh); gridMesh.geometry.dispose(); gridMesh = null; }
+  if (type === 'none') return;
+  const geo = new THREE.PlaneGeometry(1200, 1200);
+  groundMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: type === 'grid' ? 0x141E14 : 0x111811 }));
+  groundMesh.rotation.x = -Math.PI / 2;
+  groundMesh.receiveShadow = true;
+  groundMesh.userData.isGround = true;
+  scene.add(groundMesh);
+  if (type === 'grid') {
+    const pts = [];
+    for (let i = -600; i <= 600; i += 10) {
+      pts.push(-600,0.05,i, 600,0.05,i, i,0.05,-600, i,0.05,600);
+    }
+    const gg = new THREE.BufferGeometry();
+    gg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    gridMesh = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: 0x1E3028, opacity: 0.45, transparent: true }));
+    scene.add(gridMesh);
+  }
+}
+setGround('grid');
+
+// North arrow
+const na = new THREE.Mesh(new THREE.ConeGeometry(3, 12, 4), new THREE.MeshBasicMaterial({ color: 0x4488CC }));
+na.position.set(-260, 6, -260);
+scene.add(na);
+
+// ── Solar calc ──
+function calcSun(dateStr, minutes, latDeg) {
+  const d = new Date(dateStr + 'T12:00:00Z');
+  const doy = Math.floor((d - new Date(Date.UTC(d.getUTCFullYear(),0,0))) / 86400000);
+  const decl = 23.45 * Math.sin(DEG * 360/365 * (doy - 81));
+  const ha = (minutes/60 - 12) * 15;
+  const sL = Math.sin(latDeg*DEG), cL = Math.cos(latDeg*DEG);
+  const sD = Math.sin(decl*DEG), cD = Math.cos(decl*DEG), cH = Math.cos(ha*DEG);
+  const sinAlt = sL*sD + cL*cD*cH;
+  const alt = Math.asin(Math.max(-1, Math.min(1, sinAlt))) / DEG;
+  const cosAz = (sD - sL*sinAlt) / (cL*Math.cos(alt*DEG) + 1e-9);
+  let az = Math.acos(Math.max(-1, Math.min(1, cosAz))) / DEG;
+  if (Math.sin(ha*DEG) > 0) az = 360 - az;
+  return { alt, az };
+}
+
+function getShadowSize() {
+  if (!buildings.length) return 200;
+  let mH = 0, mD = 0;
+  buildings.forEach(b => { mH = Math.max(mH, b.h); mD = Math.max(mD, Math.abs(b.x), Math.abs(b.z)); });
+  return Math.max(250, mD + mH * 2.5 + 60);
+}
+
+function centroid() {
+  if (!buildings.length) return new THREE.Vector3();
+  return new THREE.Vector3(
+    buildings.reduce((s,b)=>s+b.x,0)/buildings.length,
+    0,
+    buildings.reduce((s,b)=>s+b.z,0)/buildings.length
+  );
+}
+
+function updateSun() {
+  const dateStr = document.getElementById('tl-date').value;
+  const min = parseInt(document.getElementById('tl-slider').value);
+  if (!dateStr) return;
+  const { alt, az } = calcSun(dateStr, min, lat);
+  document.getElementById('si-az').textContent = az.toFixed(1) + '°';
+  document.getElementById('si-alt').textContent = alt.toFixed(1) + '°';
+  if (alt <= 0) { sun.intensity = 0; ambient.intensity = 0.15; return; }
+  const t = Math.min(alt / 30, 1);
+  sun.intensity = 0.4 + 1.3 * t;
+  ambient.intensity = 0.25 + 0.3 * t;
+  const azR = az * DEG, altR = alt * DEG, D = 900;
+  sun.position.set(-Math.sin(azR)*Math.cos(altR)*D, Math.sin(altR)*D, -Math.cos(azR)*Math.cos(altR)*D);
+  const c = centroid();
+  sun.target.position.copy(c);
+  sun.target.updateMatrixWorld();
+  const ss = getShadowSize();
+  sun.shadow.camera.left = -ss; sun.shadow.camera.right = ss;
+  sun.shadow.camera.top = ss; sun.shadow.camera.bottom = -ss;
+  sun.shadow.camera.updateProjectionMatrix();
+}
+
+// ── Building group ──
+const bldGroup = new THREE.Group();
+scene.add(bldGroup);
+const slabGroup = new THREE.Group();
+scene.add(slabGroup);
+
+const BLD_COLORS = [0x3A6A8A,0x6A8A3A,0x8A6A3A,0x3A8A6A,0x6A3A8A,0x8A3A6A,0x4A7A6A,0x6A4A7A,0x7A4A4A,0x4A4A7A];
+
+function snapV(v) {
+  if (!gridSnap) return Math.round(v*10)/10;
+  return Math.round(v/gridSnap)*gridSnap;
+}
+
+function buildMesh(b, idx) {
+  let geo;
+  if (b.type === 'polygon' && b.pts && b.pts.length >= 3) {
+    const shape = new THREE.Shape();
+    shape.moveTo(b.pts[0].x, b.pts[0].z);
+    for (let i=1;i<b.pts.length;i++) shape.lineTo(b.pts[i].x, b.pts[i].z);
+    shape.closePath();
+    geo = new THREE.ExtrudeGeometry(shape, { depth: b.h, bevelEnabled: false });
+    geo.rotateX(-Math.PI/2);
+  } else {
+    geo = new THREE.BoxGeometry(b.w||20, b.h, b.d||15);
+  }
+  const mat = new THREE.MeshLambertMaterial({ color: BLD_COLORS[idx % BLD_COLORS.length] });
+  const mesh = new THREE.Mesh(geo, mat);
+  if (b.type === 'polygon') mesh.position.set(b.x, 0, b.z);
+  else mesh.position.set(b.x, b.h/2, b.z);
+  mesh.rotation.y = (b.ry||0)*DEG;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.userData.bId = b.id;
+
+  // Floor markers every 10 floors
+  const fh = b.fh||3;
+  const floors = Math.floor(b.h/fh);
+  const mSize = Math.max((b.w||20),(b.d||15))*0.55;
+  for (let f=10;f<=floors;f+=10) {
+    const my = f*fh - (b.type==='polygon'?0:b.h/2);
+    const mg = new THREE.TorusGeometry(mSize, 0.4, 4, 12);
+    const mm = new THREE.Mesh(mg, new THREE.MeshBasicMaterial({color:0xFFFFFF,opacity:0.35,transparent:true}));
+    mm.position.y = my;
+    mm.userData.isMarker = true;
+    mesh.add(mm);
+  }
+  return mesh;
+}
+
+function rebuildScene() {
+  while (bldGroup.children.length) {
+    const c = bldGroup.children[0];
+    c.geometry?.dispose(); c.material?.dispose(); bldGroup.remove(c);
+  }
+  clearSlabs();
+  buildings.forEach((b,i) => {
+    const m = buildMesh(b, i);
+    if (b.id === selectedId) { m.material = m.material.clone(); m.material.emissive.set(0.12,0.22,0.12); }
+    bldGroup.add(m);
+  });
+  renderBldList();
+  updateSun();
+}
+
+function clearSlabs() {
+  while (slabGroup.children.length) {
+    const c = slabGroup.children[0];
+    c.geometry?.dispose(); c.material?.dispose(); slabGroup.remove(c);
+  }
+}
+
+// ── Building ops ──
+function addBuilding(x, z, w, d, h) {
+  const b = { id:'b'+nextId++, type:'box', name:'建物 '+(buildings.length+1), x:snapV(x), z:snapV(z), w:w||20, d:d||15, h:h||30, fh:3, ry:0 };
+  buildings.push(b);
+  selectedId = b.id;
+  rebuildScene(); updatePropsPanel();
+}
+
+function addLShape() {
+  const b = { id:'b'+nextId++, type:'polygon', name:'L形 '+(buildings.length+1), x:0, z:0, w:30, d:30, h:30, fh:3, ry:0,
+    pts:[{x:-15,z:-15},{x:15,z:-15},{x:15,z:0},{x:0,z:0},{x:0,z:15},{x:-15,z:15}] };
+  buildings.push(b);
+  selectedId = b.id;
+  rebuildScene(); updatePropsPanel();
+}
+
+function deleteBuilding(id) {
+  buildings = buildings.filter(b=>b.id!==id);
+  if (selectedId===id) { selectedId=null; updatePropsPanel(); }
+  rebuildScene();
+}
+
+function copyBuilding() {
+  if (!selectedId) return;
+  const src = buildings.find(b=>b.id===selectedId);
+  if (!src) return;
+  const nb = JSON.parse(JSON.stringify(src));
+  nb.id = 'b'+nextId++; nb.name = src.name+' 複製'; nb.x+=10; nb.z+=10;
+  buildings.push(nb); selectedId=nb.id; rebuildScene(); updatePropsPanel();
+}
+
+function clearAll() {
+  if (buildings.length && !confirm('清除全部建物？')) return;
+  buildings=[]; selectedId=null; rebuildScene(); updatePropsPanel();
+}
+
+// ── UI: building list ──
+function renderBldList() {
+  const el = document.getElementById('bld-list');
+  if (!buildings.length) { el.innerHTML='<div class="no-sel">尚無建物</div>'; return; }
+  el.innerHTML = buildings.map((b,i)=>`
+    <div class="bld-item${b.id===selectedId?' selected':''}" onclick="selBld('${b.id}')">
+      <span class="bld-icon">${b.type==='polygon'?'⬟':'⬛'}</span>
+      <span class="bld-name">${b.name}</span>
+      <span class="bld-h">${b.h}m</span>
+      <button class="bld-del" onclick="event.stopPropagation();deleteBuilding('${b.id}')">✕</button>
+    </div>`).join('');
+}
+
+function selBld(id) { selectedId=id; rebuildScene(); updatePropsPanel(); }
+
+// ── Scrubber ──
+let scrDrag = null, scrX0 = 0, scrV0 = 0;
+
+function mkScrubber(key, label, val, min, max, step, unit) {
+  return `<div class="scrubber" data-key="${key}">
+    <span class="scr-lbl" onmousedown="startScr(event,'${key}',${val},${min},${max},${step})"
+      ontouchstart="startScrT(event,'${key}',${val},${min},${max},${step})">${label}</span>
+    <input class="scr-inp" type="number" id="si-${key}" value="${val}" min="${min}" max="${max}" step="${step}"
+      onchange="onProp('${key}',parseFloat(this.value))">
+    <span class="scr-unit">${unit}</span>
+  </div>`;
+}
+
+function startScr(e, key, val, min, max, step) {
+  e.preventDefault();
+  scrDrag={key,min,max,step}; scrX0=e.clientX; scrV0=val;
+  document.addEventListener('mousemove',onScrM);
+  document.addEventListener('mouseup',onScrU);
+}
+function startScrT(e, key, val, min, max, step) {
+  scrDrag={key,min,max,step}; scrX0=e.touches[0].clientX; scrV0=val;
+  document.addEventListener('touchmove',onScrTM,{passive:false});
+  document.addEventListener('touchend',onScrU);
+}
+function onScrM(e) {
+  if (!scrDrag) return;
+  const {key,min,max,step} = scrDrag;
+  const v = Math.max(min,Math.min(max,Math.round((scrV0+(e.clientX-scrX0)*step*0.5)/step)*step));
+  onProp(key,v);
+  const inp=document.getElementById('si-'+key); if(inp) inp.value=v;
+}
+function onScrTM(e) {
+  e.preventDefault();
+  if (!scrDrag) return;
+  const {key,min,max,step} = scrDrag;
+  const v = Math.max(min,Math.min(max,Math.round((scrV0+(e.touches[0].clientX-scrX0)*step*0.5)/step)*step));
+  onProp(key,v);
+  const inp=document.getElementById('si-'+key); if(inp) inp.value=v;
+}
+function onScrU() {
+  scrDrag=null;
+  document.removeEventListener('mousemove',onScrM);
+  document.removeEventListener('mouseup',onScrU);
+  document.removeEventListener('touchmove',onScrTM);
+  document.removeEventListener('touchend',onScrU);
+  rebuildScene(); updatePropsPanel();
+}
+
+function onProp(key, val) {
+  if (!selectedId) return;
+  const b = buildings.find(b=>b.id===selectedId);
+  if (!b) return;
+  b[key] = val;
+  // Fast mesh update
+  const idx = buildings.indexOf(b);
+  const old = bldGroup.children.find(m=>m.userData.bId===selectedId);
+  if (old) { old.geometry?.dispose(); old.material?.dispose(); bldGroup.remove(old); }
+  const nm = buildMesh(b, idx);
+  nm.material = nm.material.clone();
+  nm.material.emissive.set(0.12,0.22,0.12);
+  bldGroup.add(nm);
+  updateSun();
+  // Update list height
+  const lh = document.querySelector(`.bld-item[onclick="selBld('${selectedId}')" ] .bld-h`);
+  if (lh) lh.textContent = b.h+'m';
+}
+
+function updatePropsPanel() {
+  const body = document.getElementById('props-body');
+  if (!selectedId) { body.innerHTML='<div class="no-sel">選取建物以編輯屬性</div>'; return; }
+  const b = buildings.find(b=>b.id===selectedId);
+  if (!b) { body.innerHTML='<div class="no-sel">選取建物以編輯屬性</div>'; return; }
+  const fields = b.type==='polygon'
+    ? [{k:'h',l:'高',mn:3,mx:500,s:1,u:'m'},{k:'fh',l:'層高',mn:2,mx:6,s:0.5,u:'m'},{k:'x',l:'X',mn:-300,mx:300,s:1,u:'m'},{k:'z',l:'Z',mn:-300,mx:300,s:1,u:'m'}]
+    : [{k:'w',l:'寬',mn:2,mx:200,s:1,u:'m'},{k:'d',l:'深',mn:2,mx:200,s:1,u:'m'},{k:'h',l:'高',mn:3,mx:500,s:1,u:'m'},{k:'fh',l:'層高',mn:2,mx:6,s:0.5,u:'m'},{k:'ry',l:'旋轉',mn:0,mx:359,s:1,u:'°'},{k:'x',l:'X',mn:-300,mx:300,s:1,u:'m'},{k:'z',l:'Z',mn:-300,mx:300,s:1,u:'m'}];
+  body.innerHTML =
+    `<div class="prop-row"><span class="prop-lbl">名稱</span><input type="text" value="${b.name}" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(124,184,124,0.2);color:#C0D0C0;border-radius:4px;padding:3px 5px;font-size:11px" onchange="buildings.find(b=>b.id==='${b.id}').name=this.value;renderBldList()"></div>` +
+    fields.map(f=>`<div class="prop-row"><span class="prop-lbl">${f.l}</span>${mkScrubber(f.k,f.l,b[f.k]??0,f.mn,f.mx,f.s,f.u)}</div>`).join('') +
+    `<button class="abtn" style="margin-top:6px" onclick="copyBuilding()">⎘ 複製建物</button>` +
+    `<button class="abtn danger" onclick="deleteBuilding('${b.id}')">✕ 刪除</button>`;
+}
+
+// ── Tool selection ──
+function setTool(t) {
+  tool = t;
+  document.querySelectorAll('.tool-btn').forEach(e=>e.classList.remove('active'));
+  const el=document.getElementById('tb-'+t); if(el) el.classList.add('active');
+  if (t!=='polygon') cancelPoly();
+  const hints = { select:'左鍵選取/移動 · 右鍵旋轉視角 · 滾輪縮放 · Del 刪除', add:'左鍵拖曳設定建物範圍 · 右鍵旋轉視角', polygon:'點擊新增頂點 · 雙擊完成多邊形 · Esc 取消' };
+  document.getElementById('hint').textContent = hints[t]||'';
+}
+
+function setViewMode(m) {
+  viewMode=m;
+  document.getElementById('vb3d').classList.toggle('active',m==='3d');
+  document.getElementById('vbplan').classList.toggle('active',m==='plan');
+}
+
+function setCity() {
+  const v = document.getElementById('city-sel').value;
+  [lat,lon] = v.split(',').map(Number);
+  document.getElementById('lat-inp').value = lat;
+  updateSun();
+}
+
+function toggleSec(head) {
+  const body=head.nextElementSibling, tog=head.querySelector('.psec-tog');
+  if (!body) return;
+  const hidden=body.style.display==='none';
+  body.style.display=hidden?'':'none';
+  if(tog) tog.textContent=hidden?'▾':'▸';
+}
+
+function toggleAO() {
+  const el=document.getElementById('ao');
+  el.style.display=el.style.display==='none'?'block':'none';
+}
+
+// ── Timeline ──
+function onSlider() {
+  const m=parseInt(document.getElementById('tl-slider').value);
+  playMin=m;
+  document.getElementById('tl-val').textContent=fmt(m);
+  updateSun();
+}
+
+function fmt(m) {
+  return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+}
+
+function togglePlay() {
+  isPlaying=!isPlaying;
+  document.getElementById('play-btn').textContent=isPlaying?'⏸':'▶';
+  document.getElementById('play-btn').classList.toggle('active',isPlaying);
+}
+
+function cycleSpeed() {
+  playSpeedIdx=(playSpeedIdx+1)%PLAY_SPEEDS.length;
+  document.getElementById('spd-btn').textContent=PLAY_SPEEDS[playSpeedIdx]+'×';
+}
+
+function setPreset(p) {
+  const y=new Date().getFullYear();
+  const map={winter:`${y}-12-22`,equinox:`${y}-03-21`,summer:`${y}-06-21`};
+  document.getElementById('tl-date').value=map[p]; updateSun();
+}
+
+function setTime(h) {
+  const m=h*60;
+  document.getElementById('tl-slider').value=m;
+  playMin=m;
+  document.getElementById('tl-val').textContent=fmt(m);
+  updateSun();
+}
+
+// ── Floor analysis ──
+const rc = new THREE.Raycaster();
+
+function runFloorAnalysis() {
+  clearSlabs();
+  if (!selectedId) { alert('請先選取建物'); return; }
+  const tgt = buildings.find(b=>b.id===selectedId);
+  if (!tgt) return;
+  const others = bldGroup.children.filter(m=>m.userData.bId&&m.userData.bId!==selectedId);
+  const fh=tgt.fh||3, floors=Math.max(1,Math.floor(tgt.h/fh));
+  const dates=[{l:'冬至',d:new Date().getFullYear()+'-12-22'},{l:'春分',d:new Date().getFullYear()+'-03-21'},{l:'夏至',d:new Date().getFullYear()+'-06-21'}];
+  const res=[];
+  for (let f=0;f<floors;f++) {
+    const fy=(f+0.5)*fh;
+    let total=0;
+    dates.forEach(({d})=>{
+      for (let h=6;h<=18;h+=0.5) {
+        const {alt,az}=calcSun(d,h*60,lat);
+        if (alt<2) continue;
+        const azR=az*DEG,altR=alt*DEG;
+        const dir=new THREE.Vector3(Math.sin(azR)*Math.cos(altR),-Math.sin(altR),Math.cos(azR)*Math.cos(altR)).normalize();
+        const spts=[new THREE.Vector3(tgt.x-(tgt.w||20)*0.3,fy,tgt.z),new THREE.Vector3(tgt.x,fy,tgt.z),new THREE.Vector3(tgt.x+(tgt.w||20)*0.3,fy,tgt.z)];
+        let clr=0;
+        spts.forEach(pt=>{ rc.set(pt,dir.clone().negate()); if(!rc.intersectObjects(others,false).length) clr++; });
+        if (clr>=2) total+=0.5;
+      }
+    });
+    const avg=Math.round(total/3*10)/10;
+    res.push({f:f+1,h:avg});
+    const t=Math.max(0,Math.min(1,avg/8));
+    const col=new THREE.Color().setHSL(t*0.33,0.85,0.45);
+    const sg=new THREE.BoxGeometry(tgt.w||20,fh*0.65,tgt.d||15);
+    const sm=new THREE.Mesh(sg,new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.65}));
+    sm.position.set(tgt.x,fy,tgt.z);
+    slabGroup.add(sm);
+  }
+  showAnalysisResult(res, tgt.name);
+  document.getElementById('ao').style.display='block';
+}
+
+function showAnalysisResult(res, name) {
+  const maxH=Math.max(...res.map(r=>r.h),0.1);
+  const html=`<div style="font-size:10px;color:#7A9A7A;margin-bottom:6px">${name} · ${res.length}層</div>`+
+    res.map(r=>`<div class="fb-row"><span class="fb-lbl">${r.f}F</span><div class="fb-track"><div class="fb-fill" style="width:${r.h/maxH*100}%;background:hsl(${Math.round(r.h/8*120)},70%,45%)"></div></div><span class="fb-val">${r.h}h</span></div>`).join('');
+  document.getElementById('analysis-result').innerHTML=html;
+  document.getElementById('ao-body').innerHTML=html;
+}
+
+// ── Project management ──
+const SK = 'solar_studio_v1';
+function getProjects() { try{return JSON.parse(localStorage.getItem(SK)||'[]');}catch{return[];} }
+
+function showSave() {
+  document.getElementById('save-name').value=currentProj==='未命名專案'?'':currentProj;
+  document.getElementById('save-modal').style.display='flex';
+  setTimeout(()=>document.getElementById('save-name').focus(),50);
+}
+
+function confirmSave() {
+  const name=document.getElementById('save-name').value.trim()||'未命名專案';
+  currentProj=name;
+  document.getElementById('proj-name-label').textContent=name;
+  const ps=getProjects();
+  const idx=ps.findIndex(p=>p.name===name);
+  const data={name,date:new Date().toISOString(),buildings:JSON.parse(JSON.stringify(buildings)),lat,lon,nextId,dateStr:document.getElementById('tl-date').value,timeMin:playMin};
+  if(idx>=0) ps[idx]=data; else ps.unshift(data);
+  localStorage.setItem(SK,JSON.stringify(ps));
+  document.getElementById('save-modal').style.display='none';
+  const lbl=document.getElementById('proj-name-label');
+  lbl.style.color='#7CB87C'; setTimeout(()=>{lbl.style.color='';},1500);
+}
+
+function showProjects() {
+  const ps=getProjects();
+  const list=document.getElementById('proj-list');
+  if (!ps.length) { list.innerHTML='<div class="no-sel" style="padding:20px">尚無專案</div>'; }
+  else list.innerHTML=ps.map((p,i)=>`<div class="proj-item"><div class="proj-meta"><div class="proj-nm">${p.name}</div><div class="proj-dt">${new Date(p.date).toLocaleString('zh-TW')}</div></div><button class="proj-load" onclick="loadProject(${i})">載入</button><button class="proj-del" onclick="delProject(${i})">✕</button></div>`).join('');
+  document.getElementById('proj-modal').style.display='flex';
+}
+
+function loadProject(i) {
+  const p=getProjects()[i];
+  if(!p) return;
+  buildings=p.buildings||[]; lat=p.lat||25.04; lon=p.lon||121.53;
+  nextId=p.nextId||(buildings.length+1);
+  currentProj=p.name;
+  document.getElementById('proj-name-label').textContent=p.name;
+  document.getElementById('lat-inp').value=lat;
+  if(p.dateStr) document.getElementById('tl-date').value=p.dateStr;
+  if(p.timeMin!=null){document.getElementById('tl-slider').value=p.timeMin;playMin=p.timeMin;document.getElementById('tl-val').textContent=fmt(p.timeMin);}
+  selectedId=null;
+  document.getElementById('proj-modal').style.display='none';
+  rebuildScene(); updatePropsPanel();
+}
+
+function delProject(i) {
+  const ps=getProjects();
+  if(!confirm('刪除「'+ps[i].name+'」？')) return;
+  ps.splice(i,1); localStorage.setItem(SK,JSON.stringify(ps)); showProjects();
+}
+
+function newProject() {
+  if(buildings.length&&!confirm('新建將清除目前場景，確定？')) return;
+  buildings=[]; selectedId=null; currentProj='未命名專案';
+  document.getElementById('proj-name-label').textContent='未命名專案';
+  rebuildScene(); updatePropsPanel();
+}
+
+function downloadJSON() {
+  const blob=new Blob([JSON.stringify({name:currentProj,version:1,buildings,lat,lon},null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=(currentProj||'solar-studio')+'.json'; a.click();
+}
+
+function importJSON(e) {
+  const file=e.target.files[0]; if(!file) return;
+  const r=new FileReader();
+  r.onload=ev=>{ try{
+    const d=JSON.parse(ev.target.result);
+    buildings=d.buildings||[]; lat=d.lat||25.04; lon=d.lon||121.53;
+    nextId=Math.max(...buildings.map(b=>parseInt(b.id.slice(1))||0),0)+1;
+    currentProj=d.name||file.name.replace('.json','');
+    document.getElementById('proj-name-label').textContent=currentProj;
+    document.getElementById('lat-inp').value=lat;
+    selectedId=null; rebuildScene(); updatePropsPanel();
+  }catch{alert('無效 JSON');} e.target.value=''; };
+  r.readAsText(file);
+}
+
+// ── Polygon tool ──
+let polyPts=[], polyLine=null;
+
+function handlePolyClick(e) {
+  if(e.button!==0) return;
+  const gp=getGround(getCanvasXY(e));
+  if(!gp) return;
+  if(e.detail===2&&polyPts.length>=3){finishPoly();return;}
+  polyPts.push({x:snapV(gp.x),z:snapV(gp.z)});
+  updatePolyPreview();
+}
+
+function updatePolyPreview() {
+  if(polyLine){scene.remove(polyLine);polyLine=null;}
+  if(polyPts.length<2) return;
+  const pts=polyPts.map(p=>new THREE.Vector3(p.x,0.5,p.z));
+  pts.push(pts[0]);
+  const g=new THREE.BufferGeometry().setFromPoints(pts);
+  polyLine=new THREE.Line(g,new THREE.LineBasicMaterial({color:0x7CB87C}));
+  scene.add(polyLine);
+}
+
+function finishPoly() {
+  if(polyPts.length<3){cancelPoly();return;}
+  const cx=polyPts.reduce((s,p)=>s+p.x,0)/polyPts.length;
+  const cz=polyPts.reduce((s,p)=>s+p.z,0)/polyPts.length;
+  const b={id:'b'+nextId++,type:'polygon',name:'多邊形 '+(buildings.length+1),x:cx,z:cz,w:30,d:30,h:30,fh:3,ry:0,pts:polyPts.map(p=>({x:p.x-cx,z:p.z-cz}))};
+  buildings.push(b); selectedId=b.id;
+  cancelPoly(); rebuildScene(); updatePropsPanel();
+}
+
+function cancelPoly() {
+  polyPts=[];
+  if(polyLine){scene.remove(polyLine);polyLine=null;}
+}
+
+// ── Orbit / Input ──
+const canvas=document.getElementById('c');
+let orbit=null, bldDrag=null, bldDragOff=null, wasDrag=false, addDrag=null;
+
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('mousedown',onMD);
+canvas.addEventListener('mousemove',onMM);
+canvas.addEventListener('mouseup',onMU);
+canvas.addEventListener('wheel',onWheel,{passive:false});
+canvas.addEventListener('touchstart',onTS,{passive:false});
+canvas.addEventListener('touchmove',onTM,{passive:false});
+canvas.addEventListener('touchend',onTE);
+
+let touchSt=null, touchPinchD=0;
+
+function onTS(e) {
+  e.preventDefault();
+  if(e.touches.length===1) touchSt={type:'one',x:e.touches[0].clientX,y:e.touches[0].clientY};
+  else if(e.touches.length===2) {
+    const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
+    touchPinchD=Math.sqrt(dx*dx+dy*dy); touchSt={type:'two'};
+  }
+}
+function onTM(e) {
+  e.preventDefault();
+  if(!touchSt) return;
+  if(touchSt.type==='one'&&e.touches.length===1) {
+    const dx=e.touches[0].clientX-touchSt.x, dy=e.touches[0].clientY-touchSt.y;
+    rotCam(dx*0.4,dy*0.4); touchSt.x=e.touches[0].clientX; touchSt.y=e.touches[0].clientY;
+  } else if(touchSt.type==='two'&&e.touches.length===2) {
+    const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    zoomCam((touchPinchD-d)*1.2); touchPinchD=d;
+  }
+}
+function onTE(){touchSt=null;}
+
+function onMD(e) {
+  if(e.button===2||e.button===1){orbit={type:e.button===1?'pan':'orbit',x:e.clientX,y:e.clientY};return;}
+  if(tool==='polygon'){handlePolyClick(e);return;}
+  const xy=getCanvasXY(e), hit=getBldHit(xy);
+  if(tool==='select') {
+    if(hit) { bldDrag=hit.id; bldDragOff={x:hit.pt.x-buildings.find(b=>b.id===hit.id).x,z:hit.pt.z-buildings.find(b=>b.id===hit.id).z}; wasDrag=false; selectedId=hit.id; rebuildScene(); updatePropsPanel(); return; }
+    selectedId=null; rebuildScene(); updatePropsPanel();
+    orbit={type:'orbit',x:e.clientX,y:e.clientY};
+  }
+  if(tool==='add') {
+    const gp=getGround(xy);
+    if(gp) addDrag={sx:gp.x,sz:gp.z};
+  }
+}
+
+function onMM(e) {
+  if(orbit) {
+    const dx=e.clientX-orbit.x, dy=e.clientY-orbit.y;
+    if(orbit.type==='orbit') rotCam(dx,dy); else panCam(dx,dy);
+    orbit.x=e.clientX; orbit.y=e.clientY; return;
+  }
+  if(scrDrag) return;
+  if(bldDrag) {
+    const gp=getGround(getCanvasXY(e));
+    if(gp) {
+      wasDrag=true;
+      const b=buildings.find(b=>b.id===bldDrag);
+      if(b){b.x=snapV(gp.x-bldDragOff.x);b.z=snapV(gp.z-bldDragOff.z);
+        const m=bldGroup.children.find(m=>m.userData.bId===bldDrag);
+        if(m){if(b.type==='polygon')m.position.set(b.x,0,b.z);else m.position.set(b.x,b.h/2,b.z);updateSun();}}
+    }
+  }
+}
+
+function onMU(e) {
+  orbit=null;
+  if(bldDrag) {
+    if(wasDrag){const b=buildings.find(b=>b.id===bldDrag);if(b){const ix=document.getElementById('si-x');if(ix)ix.value=b.x;const iz=document.getElementById('si-z');if(iz)iz.value=b.z;}rebuildScene();}
+    bldDrag=null; bldDragOff=null; wasDrag=false; return;
+  }
+  if(addDrag) {
+    const gp=getGround(getCanvasXY(e));
+    if(gp){const w=Math.max(2,Math.abs(gp.x-addDrag.sx)),d=Math.max(2,Math.abs(gp.z-addDrag.sz));
+      if(w>1||d>1)addBuilding((addDrag.sx+gp.x)/2,(addDrag.sz+gp.z)/2,w,d,30);
+      else addBuilding(addDrag.sx,addDrag.sz,20,15,30);}
+    else addBuilding(addDrag.sx,addDrag.sz,20,15,30);
+    addDrag=null;
+  }
+}
+
+function onWheel(e) {
+  e.preventDefault();
+  if(viewMode==='plan'){orthoCam.zoom=Math.max(0.1,Math.min(8,orthoCam.zoom*(e.deltaY>0?0.88:1.14)));orthoCam.updateProjectionMatrix();}
+  else zoomCam(e.deltaY*0.45);
+}
+
+// ── Camera math ──
+function rotCam(dx,dy) {
+  camSph.th-=dx*0.006;
+  camSph.ph=Math.max(0.05,Math.min(Math.PI*0.48,camSph.ph-dy*0.006));
+  updateCam();
+}
+function panCam(dx,dy) {
+  const r=new THREE.Vector3(), fwd=new THREE.Vector3().subVectors(camTarget,perspCam.position).normalize();
+  r.crossVectors(new THREE.Vector3(0,1,0),fwd).normalize();
+  const u=new THREE.Vector3().crossVectors(r,fwd);
+  const sc=camSph.r*0.001;
+  camTarget.addScaledVector(r,-dx*sc); camTarget.addScaledVector(u,dy*sc); updateCam();
+}
+function zoomCam(d) { camSph.r=Math.max(15,Math.min(1400,camSph.r+d)); updateCam(); }
+
+// ── Raycasting helpers ──
+function getCanvasXY(e) {
+  const r=canvas.getBoundingClientRect();
+  return {x:e.clientX-r.left,y:e.clientY-r.top};
+}
+function ndcFrom(xy) {
+  const r=canvas.getBoundingClientRect();
+  return new THREE.Vector2((xy.x/r.width)*2-1,-(xy.y/r.height)*2+1);
+}
+function getBldHit(xy) {
+  rc.setFromCamera(ndcFrom(xy),viewMode==='plan'?orthoCam:perspCam);
+  const h=rc.intersectObjects(bldGroup.children,false).find(h=>h.object.userData.bId);
+  return h?{id:h.object.userData.bId,pt:h.point}:null;
+}
+function getGround(xy) {
+  rc.setFromCamera(ndcFrom(xy),viewMode==='plan'?orthoCam:perspCam);
+  if(groundMesh){const h=rc.intersectObject(groundMesh,false);return h.length?h[0].point:null;}
+  const pl=new THREE.Plane(new THREE.Vector3(0,1,0),0),t=new THREE.Vector3();
+  return rc.ray.intersectPlane(pl,t)?t:null;
+}
+
+// ── Keyboard ──
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+  if(e.key==='Delete'||e.key==='Backspace'){if(selectedId)deleteBuilding(selectedId);}
+  if((e.metaKey||e.ctrlKey)&&e.key==='d'){e.preventDefault();copyBuilding();}
+  if(e.key==='Escape'){if(tool==='polygon')cancelPoly();selectedId=null;rebuildScene();updatePropsPanel();}
+  if(e.key==='f'||e.key==='F'){
+    if(selectedId){const b=buildings.find(b=>b.id===selectedId);if(b){camTarget.set(b.x,b.h/2,b.z);camSph.r=Math.max(b.h,80)*1.8;updateCam();}}
+    else{camTarget.set(0,0,0);camSph.r=340;updateCam();}
+  }
+});
+
+// ── Resize ──
+function resize() {
+  const vp=document.getElementById('viewport'),w=vp.clientWidth,h=vp.clientHeight;
+  renderer.setSize(w,h,false);
+  perspCam.aspect=w/h; perspCam.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(document.getElementById('viewport'));
+resize();
+
+// ── Main loop ──
+function loop() {
+  requestAnimationFrame(loop);
+  if(isPlaying){
+    playMin=(playMin+PLAY_SPEEDS[playSpeedIdx])%1440;
+    document.getElementById('tl-slider').value=playMin;
+    document.getElementById('tl-val').textContent=fmt(playMin);
+    updateSun();
+  }
+  if(viewMode==='plan'){
+    const vp=document.getElementById('viewport'),w=vp.clientWidth,h=vp.clientHeight;
+    const aspect=w/h, range=300/orthoCam.zoom;
+    orthoCam.left=-range*aspect; orthoCam.right=range*aspect;
+    orthoCam.top=range; orthoCam.bottom=-range;
+    orthoCam.updateProjectionMatrix();
+  }
+  renderer.render(scene,viewMode==='plan'?orthoCam:perspCam);
+}
+
+// ── Init ──
+const today=new Date();
+document.getElementById('tl-date').value=today.toISOString().slice(0,10);
+document.getElementById('tl-slider').value=720;
+document.getElementById('tl-val').textContent='12:00';
+playMin=720;
+
+// Sample buildings
+addBuilding(0,0,20,15,40);
+addBuilding(-50,20,30,20,65);
+selectedId=null; rebuildScene(); updatePropsPanel();
+
+loop();
+</script>
+</body>
+</html>
