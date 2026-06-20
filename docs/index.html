@@ -355,7 +355,7 @@ function setGround(type) {
   if (gridMesh) { scene.remove(gridMesh); gridMesh.geometry.dispose(); gridMesh = null; }
   if (type === 'none') return;
   const geo = new THREE.PlaneGeometry(1200, 1200);
-  groundMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: type === 'grid' ? 0x141E14 : 0x111811 }));
+  groundMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: type === 'grid' ? 0x0E1810 : 0x0E1510 }));
   groundMesh.rotation.x = -Math.PI / 2;
   groundMesh.receiveShadow = true;
   groundMesh.userData.isGround = true;
@@ -367,7 +367,7 @@ function setGround(type) {
     }
     const gg = new THREE.BufferGeometry();
     gg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    gridMesh = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: 0x1E3028, opacity: 0.45, transparent: true }));
+    gridMesh = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: 0x3A7A50, opacity: 0.55, transparent: true }));
     scene.add(gridMesh);
   }
 }
