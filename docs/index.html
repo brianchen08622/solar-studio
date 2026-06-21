@@ -778,6 +778,8 @@ function clearSlabs() {
     const c = slabGroup.children[0];
     c.geometry?.dispose(); c.material?.dispose(); slabGroup.remove(c);
   }
+  analysisSlabMeshes = [];
+  lastAnalysisData = null;
 }
 
 // ── Building ops ──
@@ -1084,6 +1086,9 @@ function setTime(h) {
 
 // ── Floor analysis ──
 const rc = new THREE.Raycaster();
+let lastAnalysisData = null;   // { tgt, res:[{f,annual,winter,summer}] }
+let analysisSlabMeshes = [];   // THREE.Mesh refs for recoloring
+let analysisCurMode = 'annual';
 
 // Point-in-polygon test in XZ plane
 function ptInPoly(px, pz, poly) {
@@ -1136,6 +1141,13 @@ function makeAnalysisSlab(b, fy, fh, col) {
   return sm;
 }
 
+function slabColor(hours, mode) {
+  const t = Math.max(0, Math.min(1, hours / 8));
+  // Summer: inverted — less sun = cool = blue (good), more sun = hot = red (bad)
+  if (mode === 'summer') return new THREE.Color().setHSL((1-t)*0.6, 0.8, 0.45);
+  return new THREE.Color().setHSL(t*0.33, 0.85, 0.45);
+}
+
 function runFloorAnalysis() {
   clearSlabs();
   if (!selectedId) { alert('請先選取建物'); return; }
@@ -1145,10 +1157,11 @@ function runFloorAnalysis() {
   const others = bldGroup.children.filter(m=>m.userData.bId && m.userData.bId!==selectedId);
   const fh=tgt.fh||3, floors=Math.max(1,Math.floor(tgt.h/fh));
 
-  // 12 representative days: 21st of every month
   const y = new Date().getFullYear();
-  const dates = [1,2,3,4,5,6,7,8,9,10,11,12]
+  const allDates = [1,2,3,4,5,6,7,8,9,10,11,12]
     .map(m=>`${y}-${String(m).padStart(2,'0')}-21`);
+  // month indices (0-based): winter=Dec,Jan,Feb  summer=Jun,Jul,Aug
+  const winterIdx=[11,0,1], summerIdx=[5,6,7];
 
   const samplePts = getBldSamplePts(tgt);
   const nPts = samplePts.length;
@@ -1156,9 +1169,9 @@ function runFloorAnalysis() {
 
   for (let f=0; f<floors; f++) {
     const fy = (f+0.5)*fh;
-    let totalHits = 0;
+    const mHits = new Array(12).fill(0);
 
-    dates.forEach(dateStr=>{
+    allDates.forEach((dateStr, mi)=>{
       for (let h=6; h<=18; h+=0.5) {
         const {alt,az} = calcSun(dateStr, h*60, lat);
         if (alt<2) continue;
@@ -1171,29 +1184,68 @@ function runFloorAnalysis() {
           rc.set(new THREE.Vector3(pt.x,fy,pt.z), dir);
           if (!rc.intersectObjects(others,false).length) clr++;
         });
-        // Majority-vote: floor is sunny if >50% of sample points are clear
-        if (clr/nPts >= 0.5) totalHits += 0.5;
+        if (clr/nPts >= 0.5) mHits[mi] += 0.5;
       }
     });
 
-    const avg = Math.round(totalHits/dates.length*10)/10;
-    res.push({f:f+1, h:avg});
-    const t = Math.max(0,Math.min(1,avg/8));
-    const col = new THREE.Color().setHSL(t*0.33, 0.85, 0.45);
-    slabGroup.add(makeAnalysisSlab(tgt, fy, fh, col));
+    const rnd = v=>Math.round(v*10)/10;
+    const annual = rnd(mHits.reduce((s,h)=>s+h,0)/12);
+    const winter = rnd(winterIdx.reduce((s,i)=>s+mHits[i],0)/3);
+    const summer = rnd(summerIdx.reduce((s,i)=>s+mHits[i],0)/3);
+    res.push({f:f+1, annual, winter, summer});
+
+    const sm = makeAnalysisSlab(tgt, fy, fh, slabColor(annual,'annual'));
+    slabGroup.add(sm);
+    analysisSlabMeshes.push(sm);
   }
 
-  showAnalysisResult(res, tgt.name||'建物');
+  lastAnalysisData = {tgt, res};
+  analysisCurMode = 'annual';
+  showAnalysisResult('annual');
   document.getElementById('ao').style.display='block';
 }
 
-function showAnalysisResult(res, name) {
-  const maxH = Math.max(...res.map(r=>r.h), 0.1);
-  const avg = Math.round(res.reduce((s,r)=>s+r.h,0)/res.length*10)/10;
+function switchAnalysisMode(mode) {
+  if (!lastAnalysisData) return;
+  analysisCurMode = mode;
+  analysisSlabMeshes.forEach((sm,i)=>{
+    const r = lastAnalysisData.res[i];
+    const h = mode==='winter'?r.winter:mode==='summer'?r.summer:r.annual;
+    sm.material.color.copy(slabColor(h, mode));
+  });
+  showAnalysisResult(mode);
+}
+
+function showAnalysisResult(mode) {
+  if (!lastAnalysisData) return;
+  const {tgt, res} = lastAnalysisData;
+  const name = tgt.name||'建物';
+  const getData = r => mode==='winter'?r.winter:mode==='summer'?r.summer:r.annual;
+  const vals = res.map(getData);
+  const maxH = Math.max(...vals, 0.1);
+  const avg  = Math.round(vals.reduce((s,v)=>s+v,0)/vals.length*10)/10;
+
+  const modeLabel = {annual:'年均（12代表日）',winter:'冬季均（12–2月）',summer:'夏季均（6–8月）'}[mode];
+  const modeNote  = {
+    annual:'全年每日平均直射日照時數，每日 6–18 時',
+    winter:'冬季直射日照時數 — 多 = 暖和省暖氣 ✓',
+    summer:'夏季直射日照時數 — 少 = 涼爽省冷氣 ✓（藍色為佳）'
+  }[mode];
+  const barHsl = h => mode==='summer'
+    ? `hsl(${Math.round((1-h/8)*216)},70%,45%)`
+    : `hsl(${Math.round(h/8*120)},70%,45%)`;
+  const tabStyle = m => m===mode
+    ? 'background:rgba(124,184,124,0.3);border-color:#7CB87C;color:#C0E8C0'
+    : 'background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:#7A9A7A';
+
   const html =
-    `<div style="font-size:10px;color:#7A9A7A;margin-bottom:4px">${name} · ${res.length}層 · 年均 <b style="color:#A0C8A0">${avg}h</b>/日</div>`+
-    `<div style="font-size:9px;color:#5A7A5A;margin-bottom:6px">日照時數（12代表日平均，每日6–18時）</div>`+
-    res.map(r=>`<div class="fb-row"><span class="fb-lbl">${r.f}F</span><div class="fb-track"><div class="fb-fill" style="width:${r.h/maxH*100}%;background:hsl(${Math.round(r.h/8*120)},70%,45%)"></div></div><span class="fb-val">${r.h}h</span></div>`).join('');
+    `<div style="display:flex;gap:4px;margin-bottom:6px">
+      ${['annual','winter','summer'].map(m=>`<button onclick="switchAnalysisMode('${m}')" style="flex:1;font-size:10px;border:1px solid;border-radius:4px;padding:3px 2px;cursor:pointer;${tabStyle(m)}">${{annual:'年均',winter:'冬季',summer:'夏季'}[m]}</button>`).join('')}
+    </div>`+
+    `<div style="font-size:10px;color:#7A9A7A;margin-bottom:2px">${name} · ${res.length}層 · ${modeLabel} <b style="color:#A0C8A0">${avg}h</b>/日</div>`+
+    `<div style="font-size:9px;color:#5A7A5A;margin-bottom:5px">${modeNote}</div>`+
+    res.map((r,i)=>`<div class="fb-row"><span class="fb-lbl">${r.f}F</span><div class="fb-track"><div class="fb-fill" style="width:${vals[i]/maxH*100}%;background:${barHsl(vals[i])}"></div></div><span class="fb-val">${vals[i]}h</span></div>`).join('');
+
   document.getElementById('analysis-result').innerHTML=html;
   document.getElementById('ao-body').innerHTML=html;
 }
