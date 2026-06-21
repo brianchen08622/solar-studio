@@ -413,9 +413,9 @@ function updateCam() {
 updateCam();
 
 // ── Lights ──
-const ambient = new THREE.AmbientLight(0xD0E8F4, 1.4);
+const ambient = new THREE.AmbientLight(0xC4D4DF, 0.9);
 scene.add(ambient);
-const sun = new THREE.DirectionalLight(0xFFFDF8, 1.0);
+const sun = new THREE.DirectionalLight(0xFFFDF8, 1.2);
 sun.castShadow = true;
 sun.shadow.mapSize.set(4096, 4096);
 sun.shadow.camera.near = 1;
@@ -433,7 +433,7 @@ function setGround(type) {
   if (gridMeshMajor) { scene.remove(gridMeshMajor); gridMeshMajor.geometry.dispose(); gridMeshMajor = null; }
   if (type === 'none') return;
   const geo = new THREE.PlaneGeometry(1200, 1200);
-  groundMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: type === 'grid' ? 0xCED9D4 : 0xD2D8D4 }));
+  groundMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: type === 'grid' ? 0xD8E4E8 : 0xDCE4E8 }));
   groundMesh.rotation.x = -Math.PI / 2;
   groundMesh.receiveShadow = true;
   groundMesh.userData.isGround = true;
@@ -567,10 +567,10 @@ function updateSun() {
   const { alt, az } = calcSun(dateStr, min, lat);
   document.getElementById('si-az').textContent = az.toFixed(1) + '°';
   document.getElementById('si-alt').textContent = alt.toFixed(1) + '°';
-  if (alt <= 0) { sun.intensity = 0; ambient.intensity = 0.9; return; }
+  if (alt <= 0) { sun.intensity = 0; ambient.intensity = 0.6; return; }
   const t = Math.min(alt / 30, 1);
-  sun.intensity = 0.3 + 0.7 * t;
-  ambient.intensity = 1.0 + 0.4 * t;
+  sun.intensity = 0.5 + 0.9 * t;
+  ambient.intensity = 0.6 + 0.4 * t;
   const azR = az * DEG, altR = alt * DEG, D = 900;
   sun.position.set(Math.sin(azR)*Math.cos(altR)*D, Math.sin(altR)*D, -Math.cos(azR)*Math.cos(altR)*D);
   const c = centroid();
@@ -622,7 +622,29 @@ function buildMesh(b, idx) {
   const w = b.w || 20, d = b.d || 15;
   const hw = w / 2, hd = d / 2;
 
-  // ── Window bands (box buildings only) — one per floor ──
+  // ── Window bands — one per floor ──
+  if (b.type === 'polygon' && b.pts && b.pts.length >= 3) {
+    // Polygon: place PlaneGeometry strips along each edge, per floor
+    const winH = Math.max(0.25, fh * 0.22);
+    const winMat = new THREE.MeshLambertMaterial({ color: WIN_COLOR, transparent: true, opacity: 0.72, side: THREE.DoubleSide });
+    const pts = b.pts, n = pts.length;
+    for (let ei = 0; ei < n; ei++) {
+      const A = pts[ei], B = pts[(ei + 1) % n];
+      const dx = B.x - A.x, dz = B.z - A.z;
+      const len = Math.sqrt(dx*dx + dz*dz);
+      if (len < 0.5) continue;
+      const cx = (A.x + B.x) / 2, cz = (A.z + B.z) / 2;
+      const nx = dz / len, nz = -dx / len;        // outward normal (CCW winding)
+      const angle = Math.atan2(-dz, dx);           // align plane width with edge dir
+      for (let f = 1; f <= floors; f++) {
+        const wy = f * fh - fh * 0.5;             // polygon mesh: y=0 at ground
+        const wm = new THREE.Mesh(new THREE.PlaneGeometry(len * 0.78, winH), winMat);
+        wm.position.set(cx + nx * 0.03, wy, cz + nz * 0.03);
+        wm.rotation.y = angle;
+        mesh.add(wm);
+      }
+    }
+  }
   if (b.type !== 'polygon') {
     const winH = Math.max(0.25, fh * 0.22);
     const winMat = new THREE.MeshLambertMaterial({ color: WIN_COLOR, transparent: true, opacity: 0.72 });
