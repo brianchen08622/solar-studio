@@ -456,6 +456,25 @@ function onSnapChange(val) {
 setGround('grid');
 
 // ── Cardinal axis lines + labels ──
+function makeFloorLabel(floorNum) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 96; canvas.height = 52;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 96, 52);
+  ctx.fillStyle = 'rgba(20,30,20,0.75)';
+  ctx.beginPath(); ctx.rect(0, 0, 96, 52); ctx.fill();
+  ctx.font = 'bold 32px sans-serif';
+  ctx.fillStyle = '#FFDD66';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(floorNum + 'F', 48, 26);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(9, 5, 1);
+  return sprite;
+}
+
 function makeTextSprite(text, color) {
   const canvas = document.createElement('canvas');
   canvas.width = 128; canvas.height = 128;
@@ -588,14 +607,21 @@ function buildMesh(b, idx) {
   // Floor markers every 10 floors
   const fh = b.fh||3;
   const floors = Math.floor(b.h/fh);
-  const mSize = Math.max((b.w||20),(b.d||15))*0.55;
-  for (let f=10;f<=floors;f+=10) {
-    const my = f*fh - (b.type==='polygon'?0:b.h/2);
-    const mg = new THREE.TorusGeometry(mSize, 0.4, 4, 12);
-    const mm = new THREE.Mesh(mg, new THREE.MeshBasicMaterial({color:0xFFFFFF,opacity:0.35,transparent:true}));
+  const hw = Math.max((b.w||20),(b.d||15)) / 2;
+  const ringR = hw + 0.5;
+  for (let f=10; f<=floors; f+=10) {
+    const my = f*fh - (b.type==='polygon' ? 0 : b.h/2);
+    // Ring
+    const mg = new THREE.TorusGeometry(ringR, 0.55, 8, 32);
+    const mm = new THREE.Mesh(mg, new THREE.MeshBasicMaterial({color:0xFFDD66, opacity:0.9, transparent:true}));
     mm.position.y = my;
     mm.userData.isMarker = true;
     mesh.add(mm);
+    // Floor number label
+    const sp = makeFloorLabel(f);
+    sp.position.set(ringR + 5, my, 0);
+    sp.userData.isMarker = true;
+    mesh.add(sp);
   }
   return mesh;
 }
