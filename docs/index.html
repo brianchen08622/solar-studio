@@ -1117,7 +1117,8 @@ function cancelPoly() {
 
 // ── Orbit / Input ──
 const canvas=document.getElementById('c');
-let orbit=null, bldDrag=null, bldDragOff=null, wasDrag=false, addDrag=null;
+const DRAG_PX = 6; // pixels before building drag activates
+let orbit=null, bldDrag=null, bldDragOff=null, bldDragStart=null, bldDragActive=false, wasDrag=false, addDrag=null;
 
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
 canvas.addEventListener('mousedown',onMD);
@@ -1174,7 +1175,7 @@ function onMD(e) {
   if(tool==='polygon'){handlePolyClick(e);return;}
   const xy=getCanvasXY(e), hit=getBldHit(xy);
   if(tool==='select') {
-    if(hit) { bldDrag=hit.id; bldDragOff={x:hit.pt.x-buildings.find(b=>b.id===hit.id).x,z:hit.pt.z-buildings.find(b=>b.id===hit.id).z}; wasDrag=false; selectedId=hit.id; rebuildScene(); updatePropsPanel(); return; }
+    if(hit) { bldDrag=hit.id; bldDragOff={x:hit.pt.x-buildings.find(b=>b.id===hit.id).x,z:hit.pt.z-buildings.find(b=>b.id===hit.id).z}; bldDragStart={x:e.clientX,y:e.clientY}; bldDragActive=false; wasDrag=false; selectedId=hit.id; rebuildScene(); updatePropsPanel(); return; }
     selectedId=null; rebuildScene(); updatePropsPanel();
     orbit={type:(e.shiftKey||viewMode==='plan')?'pan':'orbit',x:e.clientX,y:e.clientY};
   }
@@ -1194,6 +1195,11 @@ function onMM(e) {
   }
   if(scrDrag) return;
   if(bldDrag) {
+    if(!bldDragActive) {
+      const dx=e.clientX-bldDragStart.x, dy=e.clientY-bldDragStart.y;
+      if(dx*dx+dy*dy < DRAG_PX*DRAG_PX) return; // haven't dragged far enough yet
+      bldDragActive=true;
+    }
     const gp=getGround(getCanvasXY(e));
     if(gp) {
       wasDrag=true;
@@ -1209,7 +1215,7 @@ function onMU(e) {
   orbit=null;
   if(bldDrag) {
     if(wasDrag){const b=buildings.find(b=>b.id===bldDrag);if(b){const ix=document.getElementById('si-x');if(ix)ix.value=b.x;const iz=document.getElementById('si-z');if(iz)iz.value=b.z;}rebuildScene();}
-    bldDrag=null; bldDragOff=null; wasDrag=false; return;
+    bldDrag=null; bldDragOff=null; bldDragStart=null; bldDragActive=false; wasDrag=false; return;
   }
   if(addDrag) {
     const gp=getGround(getCanvasXY(e));
