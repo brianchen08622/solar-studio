@@ -587,8 +587,8 @@ function buildMesh(b, idx) {
   let geo;
   if (b.type === 'polygon' && b.pts && b.pts.length >= 3) {
     const shape = new THREE.Shape();
-    shape.moveTo(b.pts[0].x, b.pts[0].z);
-    for (let i=1;i<b.pts.length;i++) shape.lineTo(b.pts[i].x, b.pts[i].z);
+    shape.moveTo(b.pts[0].x, -b.pts[0].z);
+    for (let i=1;i<b.pts.length;i++) shape.lineTo(b.pts[i].x, -b.pts[i].z);
     shape.closePath();
     geo = new THREE.ExtrudeGeometry(shape, { depth: b.h, bevelEnabled: false });
     geo.rotateX(-Math.PI/2);
