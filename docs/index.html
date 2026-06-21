@@ -604,24 +604,41 @@ function buildMesh(b, idx) {
   mesh.receiveShadow = true;
   mesh.userData.bId = b.id;
 
-  // Floor markers every 10 floors — thin horizontal line loop
+  // Floor markers every 10 floors
   const fh = b.fh||3;
   const floors = Math.floor(b.h/fh);
   const hw = (b.w||20)/2, hd = (b.d||15)/2;
-  const lineMat = new THREE.LineBasicMaterial({color:0x8899AA, opacity:0.85, transparent:true});
+
+  // Build footprint: polygon pts or box corners
+  const footprint = (b.type==='polygon' && b.pts && b.pts.length>=3)
+    ? [...b.pts, b.pts[0]]                                          // closed polygon
+    : [{x:-hw,z:-hd},{x:hw,z:-hd},{x:hw,z:hd},{x:-hw,z:hd},{x:-hw,z:-hd}]; // box
+  const vertices = footprint.slice(0,-1); // unique vertices (no closing duplicate)
+
+  const lineMat = new THREE.LineBasicMaterial({color:0x4A6070, depthTest:false});
+  const tickMat = new THREE.LineBasicMaterial({color:0x4A6070, depthTest:false});
+
   for (let f=10; f<=floors; f+=10) {
     const ly = f*fh - (b.type==='polygon' ? 0 : b.h/2);
-    const pts = [
-      new THREE.Vector3(-hw, ly, -hd),
-      new THREE.Vector3( hw, ly, -hd),
-      new THREE.Vector3( hw, ly,  hd),
-      new THREE.Vector3(-hw, ly,  hd),
-      new THREE.Vector3(-hw, ly, -hd),
-    ];
-    const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
-    const line = new THREE.Line(lineGeo, lineMat);
-    line.userData.isMarker = true;
-    mesh.add(line);
+
+    // Horizontal outline — follows actual footprint shape
+    const hPts = footprint.map(p=>new THREE.Vector3(p.x, ly, p.z));
+    const hGeo = new THREE.BufferGeometry().setFromPoints(hPts);
+    const hLine = new THREE.Line(hGeo, lineMat);
+    hLine.userData.isMarker = true;
+    mesh.add(hLine);
+
+    // Vertical tick at every vertex → visible from any horizontal angle
+    const tk = Math.max(fh * 0.35, 0.8);
+    vertices.forEach(p=>{
+      const tGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(p.x, ly - tk, p.z),
+        new THREE.Vector3(p.x, ly + tk, p.z),
+      ]);
+      const tLine = new THREE.Line(tGeo, tickMat);
+      tLine.userData.isMarker = true;
+      mesh.add(tLine);
+    });
   }
   return mesh;
 }
