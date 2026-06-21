@@ -780,6 +780,7 @@ function clearSlabs() {
   }
   analysisSlabMeshes = [];
   lastAnalysisData = null;
+  analysisFacade = null;
 }
 
 // ── Building ops ──
@@ -1086,9 +1087,10 @@ function setTime(h) {
 
 // ── Floor analysis ──
 const rc = new THREE.Raycaster();
-let lastAnalysisData = null;   // { tgt, res:[{f,annual,winter,summer}] }
+let lastAnalysisData = null;   // { tgt, res:[{f}], rawSlots:[{alt,az,month}], floorSlotHits:[Uint8Array] }
 let analysisSlabMeshes = [];   // THREE.Mesh refs for recoloring
 let analysisCurMode = 'annual';
+let analysisFacade = null;     // null=all directions, or azimuth in degrees (0=N,90=E,180=S,270=W)
 
 // Point-in-polygon test in XZ plane
 function ptInPoly(px, pz, poly) {
@@ -1148,6 +1150,29 @@ function slabColor(hours, mode) {
   return new THREE.Color().setHSL(t*0.33, 0.85, 0.45);
 }
 
+// Core per-slot hours calculator — works without lastAnalysisData
+function _computeHours(hits, rawSlots, mode, facadeAz) {
+  const sMonths = mode==='winter'?[11,0,1]:mode==='summer'?[5,6,7]:null;
+  let count = 0;
+  for (let si=0; si<hits.length; si++) {
+    if (!hits[si]) continue;
+    const s = rawSlots[si];
+    if (sMonths && !sMonths.includes(s.month)) continue;
+    if (facadeAz !== null) {
+      // Sun must be within ±90° of facade normal (horizontal component)
+      let diff = ((s.az - facadeAz) % 360 + 540) % 360 - 180;
+      if (Math.abs(diff) >= 90) continue;
+    }
+    count++;
+  }
+  return Math.round(count * 0.5 * 10) / 10;
+}
+
+function computeFloorHours(floorIdx, mode, facadeAz) {
+  const {rawSlots, floorSlotHits} = lastAnalysisData;
+  return _computeHours(floorSlotHits[floorIdx], rawSlots, mode, facadeAz);
+}
+
 function runFloorAnalysis() {
   clearSlabs();
   if (!selectedId) { alert('請先選取建物'); return; }
@@ -1160,76 +1185,94 @@ function runFloorAnalysis() {
   const y = new Date().getFullYear();
   const allDates = [1,2,3,4,5,6,7,8,9,10,11,12]
     .map(m=>`${y}-${String(m).padStart(2,'0')}-21`);
-  // month indices (0-based): winter=Dec,Jan,Feb  summer=Jun,Jul,Aug
-  const winterIdx=[11,0,1], summerIdx=[5,6,7];
 
   const samplePts = getBldSamplePts(tgt);
   const nPts = samplePts.length;
-  const res = [];
+
+  // Pre-compute valid sun slots once (shared across all floors)
+  const rawSlots = [], slotDirs = [];
+  allDates.forEach((dateStr, mi) => {
+    for (let h=6; h<=18; h+=0.5) {
+      const {alt, az} = calcSun(dateStr, h*60, lat);
+      if (alt < 2) continue;
+      rawSlots.push({alt, az, month: mi});
+      const azR=az*DEG, altR=alt*DEG;
+      slotDirs.push(new THREE.Vector3(
+        Math.sin(azR)*Math.cos(altR), Math.sin(altR), -Math.cos(azR)*Math.cos(altR)
+      ).normalize());
+    }
+  });
+  const nSlots = rawSlots.length;
+
+  const res = [], floorSlotHits = [];
 
   for (let f=0; f<floors; f++) {
     const fy = (f+0.5)*fh;
-    const mHits = new Array(12).fill(0);
+    const hits = new Uint8Array(nSlots);
+    for (let si=0; si<nSlots; si++) {
+      let clr=0;
+      samplePts.forEach(pt=>{
+        rc.set(new THREE.Vector3(pt.x, fy, pt.z), slotDirs[si]);
+        if (!rc.intersectObjects(others, false).length) clr++;
+      });
+      hits[si] = clr/nPts >= 0.5 ? 1 : 0;
+    }
+    floorSlotHits.push(hits);
+    res.push({f: f+1});
 
-    allDates.forEach((dateStr, mi)=>{
-      for (let h=6; h<=18; h+=0.5) {
-        const {alt,az} = calcSun(dateStr, h*60, lat);
-        if (alt<2) continue;
-        const azR=az*DEG, altR=alt*DEG;
-        const dir = new THREE.Vector3(
-          Math.sin(azR)*Math.cos(altR), Math.sin(altR), -Math.cos(azR)*Math.cos(altR)
-        ).normalize();
-        let clr=0;
-        samplePts.forEach(pt=>{
-          rc.set(new THREE.Vector3(pt.x,fy,pt.z), dir);
-          if (!rc.intersectObjects(others,false).length) clr++;
-        });
-        if (clr/nPts >= 0.5) mHits[mi] += 0.5;
-      }
-    });
-
-    const rnd = v=>Math.round(v*10)/10;
-    const annual = rnd(mHits.reduce((s,h)=>s+h,0)/12);
-    const winter = rnd(winterIdx.reduce((s,i)=>s+mHits[i],0)/3);
-    const summer = rnd(summerIdx.reduce((s,i)=>s+mHits[i],0)/3);
-    res.push({f:f+1, annual, winter, summer});
-
-    const sm = makeAnalysisSlab(tgt, fy, fh, slabColor(annual,'annual'));
+    const annual = _computeHours(hits, rawSlots, 'annual', null);
+    const sm = makeAnalysisSlab(tgt, fy, fh, slabColor(annual, 'annual'));
     slabGroup.add(sm);
     analysisSlabMeshes.push(sm);
   }
 
-  lastAnalysisData = {tgt, res};
+  lastAnalysisData = {tgt, res, rawSlots, floorSlotHits};
   analysisCurMode = 'annual';
+  analysisFacade = null;
   showAnalysisResult('annual');
   document.getElementById('ao').style.display='block';
+}
+
+function recolorSlabs() {
+  if (!lastAnalysisData) return;
+  const mode = analysisCurMode, facade = analysisFacade;
+  analysisSlabMeshes.forEach((sm, i) => {
+    sm.material.color.copy(slabColor(computeFloorHours(i, mode, facade), mode));
+  });
+  showAnalysisResult(mode);
 }
 
 function switchAnalysisMode(mode) {
   if (!lastAnalysisData) return;
   analysisCurMode = mode;
-  analysisSlabMeshes.forEach((sm,i)=>{
-    const r = lastAnalysisData.res[i];
-    const h = mode==='winter'?r.winter:mode==='summer'?r.summer:r.annual;
-    sm.material.color.copy(slabColor(h, mode));
-  });
-  showAnalysisResult(mode);
+  recolorSlabs();
+}
+
+function switchFacade(az) {
+  if (!lastAnalysisData) return;
+  analysisFacade = az;
+  recolorSlabs();
+}
+
+function facadeName(az) {
+  return {0:'正北',45:'東北',90:'正東',135:'東南',180:'正南',225:'西南',270:'正西',315:'西北'}[az]||'';
 }
 
 function showAnalysisResult(mode) {
   if (!lastAnalysisData) return;
   const {tgt, res} = lastAnalysisData;
   const name = tgt.name||'建物';
-  const getData = r => mode==='winter'?r.winter:mode==='summer'?r.summer:r.annual;
-  const vals = res.map(getData);
+  const facade = analysisFacade;
+  const vals = res.map((r,i) => computeFloorHours(i, mode, facade));
   const maxH = Math.max(...vals, 0.1);
   const avg  = Math.round(vals.reduce((s,v)=>s+v,0)/vals.length*10)/10;
 
   const modeLabel = {annual:'年均（12代表日）',winter:'冬季均（12–2月）',summer:'夏季均（6–8月）'}[mode];
+  const facadeNote = facade === null ? '全向' : facadeName(facade)+'面';
   const modeNote  = {
-    annual:'全年每日平均直射日照時數，每日 6–18 時',
-    winter:'冬季直射日照時數 — 多 = 暖和省暖氣 ✓',
-    summer:'夏季直射日照時數 — 少 = 涼爽省冷氣 ✓（藍色為佳）'
+    annual:`${facadeNote}直射日照時數，每日 6–18 時`,
+    winter:`冬季${facadeNote}直射日照時數 — 多 = 暖和省暖氣 ✓`,
+    summer:`夏季${facadeNote}直射日照時數 — 少 = 涼爽省冷氣 ✓（藍色為佳）`
   }[mode];
   const barHsl = h => mode==='summer'
     ? `hsl(${Math.round((1-h/8)*216)},70%,45%)`
@@ -1237,8 +1280,19 @@ function showAnalysisResult(mode) {
   const tabStyle = m => m===mode
     ? 'background:rgba(124,184,124,0.3);border-color:#7CB87C;color:#C0E8C0'
     : 'background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:#7A9A7A';
+  const facBtn = (az, label) => {
+    const active = analysisFacade === az;
+    const s = active
+      ? 'background:rgba(124,184,124,0.3);border-color:#7CB87C;color:#C0E8C0'
+      : 'background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:#7A9A7A';
+    return `<button onclick="switchFacade(${az})" style="flex:1;font-size:9px;border:1px solid;border-radius:3px;padding:2px 0;cursor:pointer;${s}">${label}</button>`;
+  };
 
   const html =
+    `<div style="display:flex;gap:2px;margin-bottom:4px;align-items:center">
+      <span style="font-size:9px;color:#7A9A7A;margin-right:2px;white-space:nowrap">面向</span>
+      ${facBtn(null,'全')}${facBtn(0,'N')}${facBtn(45,'NE')}${facBtn(90,'E')}${facBtn(135,'SE')}${facBtn(180,'S')}${facBtn(225,'SW')}${facBtn(270,'W')}${facBtn(315,'NW')}
+    </div>`+
     `<div style="display:flex;gap:4px;margin-bottom:6px">
       ${['annual','winter','summer'].map(m=>`<button onclick="switchAnalysisMode('${m}')" style="flex:1;font-size:10px;border:1px solid;border-radius:4px;padding:3px 2px;cursor:pointer;${tabStyle(m)}">${{annual:'年均',winter:'冬季',summer:'夏季'}[m]}</button>`).join('')}
     </div>`+
