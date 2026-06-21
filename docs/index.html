@@ -134,6 +134,15 @@ body{background:#0A0E13;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',
 ::-webkit-scrollbar-thumb{background:rgba(124,184,124,0.2);border-radius:2px}
 select{background:rgba(255,255,255,0.06);border:1px solid rgba(124,184,124,0.2);color:#C0D0C0;border-radius:4px;padding:4px 5px;font-size:11px;width:100%}
 select:focus{outline:none;border-color:#7CB87C}
+/* ── Map scrollbars ── */
+.msc-track{position:absolute;background:rgba(0,0,0,0.15);border-radius:5px;z-index:45;cursor:pointer}
+.msc-track:hover{background:rgba(0,0,0,0.25)}
+#msc-h{bottom:0;left:0;right:0;height:10px;border-radius:0}
+#msc-v{top:0;right:0;bottom:10px;width:10px;border-radius:0}
+.msc-thumb{position:absolute;background:rgba(124,184,124,0.3);border-radius:4px;cursor:grab;transition:background 0.15s;user-select:none}
+.msc-thumb:hover,.msc-thumb.msc-active{background:rgba(124,184,124,0.6);cursor:grabbing}
+#msc-h .msc-thumb{top:2px;bottom:2px;min-width:24px}
+#msc-v .msc-thumb{left:2px;right:2px;min-height:24px}
 </style>
 </head>
 <body>
@@ -228,6 +237,9 @@ select:focus{outline:none;border-color:#7CB87C}
     <div id="sun-info">方位角 <span class="si-val" id="si-az">—</span><br>仰角 <span class="si-val" id="si-alt">—</span></div>
     <div id="hint">左鍵選取/移動 · 右鍵旋轉視角 · 滾輪縮放 · Del 刪除</div>
     <div id="ao"><div class="ao-title">📊 日照分析</div><div id="ao-body"></div></div>
+    <!-- Map scrollbars -->
+    <div id="msc-h" class="msc-track"><div id="msc-h-thumb" class="msc-thumb"></div></div>
+    <div id="msc-v" class="msc-track"><div id="msc-v-thumb" class="msc-thumb"></div></div>
     <!-- Compass -->
     <div id="compass">
       <div id="compass-ring"></div>
@@ -1264,6 +1276,96 @@ function panOrthoCam(dx, dy) {
   orthoPan.z -= dy * (range * 2) / vp.clientHeight;
 }
 
+// ── Map scrollbar pan ──
+const MAP_RANGE = 600;
+let mscDrag = null;
+
+function getMapXZ() {
+  return viewMode === 'plan'
+    ? {x: orthoPan.x, z: orthoPan.z}
+    : {x: camTarget.x, z: camTarget.z};
+}
+function setMapXZ(x, z) {
+  if (viewMode === 'plan') { orthoPan.x = x; orthoPan.z = z; }
+  else { camTarget.x = x; camTarget.z = z; updateCam(); }
+}
+
+function updateScrollbars() {
+  const hTrack = document.getElementById('msc-h');
+  const vTrack = document.getElementById('msc-v');
+  const hThumb = document.getElementById('msc-h-thumb');
+  const vThumb = document.getElementById('msc-v-thumb');
+  if (!hTrack || !hTrack.clientWidth) return;
+  const pos = getMapXZ();
+  // Thumb size proportional to zoom level
+  const viewSz = viewMode === 'plan'
+    ? (300 / orthoCam.zoom) * 2
+    : camSph.r * 0.9;
+  const frac = Math.min(0.6, Math.max(0.08, viewSz / (MAP_RANGE * 2)));
+  const tw = hTrack.clientWidth, th = vTrack.clientHeight;
+  const tfw = Math.round(tw * frac), tfh = Math.round(th * frac);
+  hThumb.style.width = tfw + 'px';
+  vThumb.style.height = tfh + 'px';
+  const nx = (pos.x + MAP_RANGE) / (MAP_RANGE * 2);
+  const nz = (pos.z + MAP_RANGE) / (MAP_RANGE * 2);
+  hThumb.style.left = Math.max(0, Math.min(tw - tfw, nx * (tw - tfw))) + 'px';
+  vThumb.style.top  = Math.max(0, Math.min(th - tfh, nz * (th - tfh))) + 'px';
+}
+
+function initScrollbars() {
+  const hThumb = document.getElementById('msc-h-thumb');
+  const vThumb = document.getElementById('msc-v-thumb');
+
+  function startThumbDrag(e, axis) {
+    e.stopPropagation(); e.preventDefault();
+    const pos = getMapXZ();
+    mscDrag = {
+      axis, startMouse: axis === 'h' ? e.clientX : e.clientY,
+      startWorld: axis === 'h' ? pos.x : pos.z,
+    };
+    e.currentTarget.classList.add('msc-active');
+  }
+  hThumb.addEventListener('mousedown', e => startThumbDrag(e, 'h'));
+  vThumb.addEventListener('mousedown', e => startThumbDrag(e, 'v'));
+
+  // Click on track body to jump
+  document.getElementById('msc-h').addEventListener('mousedown', e => {
+    if (e.target !== e.currentTarget) return;
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    const world = -MAP_RANGE + ((e.clientX - r.left) / r.width) * MAP_RANGE * 2;
+    const pos = getMapXZ(); setMapXZ(world, pos.z);
+  });
+  document.getElementById('msc-v').addEventListener('mousedown', e => {
+    if (e.target !== e.currentTarget) return;
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    const world = -MAP_RANGE + ((e.clientY - r.top) / r.height) * MAP_RANGE * 2;
+    const pos = getMapXZ(); setMapXZ(pos.x, world);
+  });
+
+  window.addEventListener('mousemove', e => {
+    if (!mscDrag) return;
+    const id = mscDrag.axis === 'h' ? 'msc-h' : 'msc-v';
+    const tid = mscDrag.axis === 'h' ? 'msc-h-thumb' : 'msc-v-thumb';
+    const track = document.getElementById(id);
+    const thumb = document.getElementById(tid);
+    const trackSz = mscDrag.axis === 'h' ? track.clientWidth : track.clientHeight;
+    const thumbSz = mscDrag.axis === 'h' ? thumb.offsetWidth : thumb.offsetHeight;
+    const delta = (mscDrag.axis === 'h' ? e.clientX : e.clientY) - mscDrag.startMouse;
+    const wDelta = delta / Math.max(1, trackSz - thumbSz) * (MAP_RANGE * 2);
+    const newW = mscDrag.startWorld + wDelta;
+    const pos = getMapXZ();
+    if (mscDrag.axis === 'h') setMapXZ(newW, pos.z);
+    else setMapXZ(pos.x, newW);
+  });
+  window.addEventListener('mouseup', () => {
+    if (!mscDrag) return;
+    document.querySelectorAll('.msc-thumb').forEach(t => t.classList.remove('msc-active'));
+    mscDrag = null;
+  });
+}
+
 function panCam(dx,dy) {
   const r=new THREE.Vector3(), fwd=new THREE.Vector3().subVectors(camTarget,perspCam.position).normalize();
   r.crossVectors(new THREE.Vector3(0,1,0),fwd).normalize();
@@ -1349,6 +1451,7 @@ function loop() {
     orthoCam.position.z = orthoPan.z;
   }
   updateCompass();
+  updateScrollbars();
   renderer.render(scene,viewMode==='plan'?orthoCam:perspCam);
 }
 
@@ -1360,6 +1463,8 @@ updateDateBtn(todayStr);
 document.getElementById('tl-slider').value=720;
 document.getElementById('tl-val').textContent='12:00';
 playMin=720;
+
+initScrollbars();
 
 // Sample buildings
 addBuilding(0,0,20,15,40);
