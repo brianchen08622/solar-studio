@@ -195,7 +195,7 @@ select:focus{outline:none;border-color:#7CB87C}
       <div class="psec-head" onclick="toggleSec(this)"><span class="psec-title">場景</span><span class="psec-tog">▾</span></div>
       <div class="psec-body">
         <div class="prop-row"><span class="prop-lbl">格線</span>
-          <select onchange="gridSnap=parseInt(this.value)">
+          <select onchange="onSnapChange(this.value)">
             <option value="0">無</option><option value="1" selected>1m</option>
             <option value="5">5m</option><option value="10">10m</option>
           </select>
@@ -375,10 +375,12 @@ scene.add(sun);
 scene.add(sun.target);
 
 // ── Ground ──
-let groundMesh = null, gridMesh = null;
+let groundMesh = null, gridMesh = null, gridMeshMajor = null, currentGroundType = 'grid';
 function setGround(type) {
+  currentGroundType = type;
   if (groundMesh) { scene.remove(groundMesh); groundMesh.geometry.dispose(); groundMesh = null; }
   if (gridMesh) { scene.remove(gridMesh); gridMesh.geometry.dispose(); gridMesh = null; }
+  if (gridMeshMajor) { scene.remove(gridMeshMajor); gridMeshMajor.geometry.dispose(); gridMeshMajor = null; }
   if (type === 'none') return;
   const geo = new THREE.PlaneGeometry(1200, 1200);
   groundMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: type === 'grid' ? 0x0E1810 : 0x0E1510 }));
@@ -387,15 +389,31 @@ function setGround(type) {
   groundMesh.userData.isGround = true;
   scene.add(groundMesh);
   if (type === 'grid') {
-    const pts = [];
-    for (let i = -600; i <= 600; i += 10) {
-      pts.push(-600,0.05,i, 600,0.05,i, i,0.05,-600, i,0.05,600);
+    const step = gridSnap > 0 ? gridSnap : 5;
+    const major = step <= 5 ? step * 10 : step * 5;
+    const minPts = [], majPts = [];
+    for (let i = -600; i <= 600; i += step) {
+      const arr = (i % major === 0) ? majPts : minPts;
+      arr.push(-600,0.05,i, 600,0.05,i, i,0.05,-600, i,0.05,600);
     }
-    const gg = new THREE.BufferGeometry();
-    gg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    gridMesh = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: 0x3A7A50, opacity: 0.55, transparent: true }));
-    scene.add(gridMesh);
+    if (minPts.length) {
+      const gg = new THREE.BufferGeometry();
+      gg.setAttribute('position', new THREE.Float32BufferAttribute(minPts, 3));
+      gridMesh = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: 0x285A38, opacity: 0.45, transparent: true }));
+      scene.add(gridMesh);
+    }
+    if (majPts.length) {
+      const mg = new THREE.BufferGeometry();
+      mg.setAttribute('position', new THREE.Float32BufferAttribute(majPts, 3));
+      gridMeshMajor = new THREE.LineSegments(mg, new THREE.LineBasicMaterial({ color: 0x4A9060, opacity: 0.75, transparent: true }));
+      scene.add(gridMeshMajor);
+    }
   }
+}
+
+function onSnapChange(val) {
+  gridSnap = parseInt(val);
+  if (currentGroundType === 'grid') setGround('grid');
 }
 setGround('grid');
 
