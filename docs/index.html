@@ -1170,8 +1170,70 @@ function _computeHours(hits, rawSlots, mode, facadeAz) {
 }
 
 function computeFloorHours(floorIdx, mode, facadeAz) {
-  const {rawSlots, floorSlotHits} = lastAnalysisData;
-  return _computeHours(floorSlotHits[floorIdx], rawSlots, mode, facadeAz);
+  const {rawSlots, floorSlotHits, facadeHitsMap} = lastAnalysisData;
+  const hits = (facadeAz !== null && facadeHitsMap && facadeHitsMap[facadeAz])
+    ? facadeHitsMap[facadeAz][floorIdx]
+    : floorSlotHits[floorIdx];
+  return _computeHours(hits, rawSlots, mode, facadeAz);
+}
+
+// 3 sample points near a specific facade wall (not center)
+function getPerimeterSamplePts(b, facadeAz) {
+  const rad = facadeAz * DEG;
+  const wnx = Math.sin(rad), wnz = -Math.cos(rad);
+
+  if (b.type !== 'polygon') {
+    const hw = (b.w||20)/2, hd = (b.d||15)/2;
+    const ry = (b.ry||0)*DEG, sinR = Math.sin(ry), cosR = Math.cos(ry);
+    // Facade normal in local (building) space
+    const lnx = wnx*cosR + wnz*sinR;
+    const lnz = -wnx*sinR + wnz*cosR;
+    // Scale to 85% toward the surface
+    const k = 0.85 / Math.max(Math.abs(lnx)/hw, Math.abs(lnz)/hd);
+    const faceLx = lnx*k, faceLz = lnz*k;
+    // Tangent along facade (perpendicular to normal)
+    const tanLx = -lnz, tanLz = lnx;
+    const span = (Math.abs(lnx) > Math.abs(lnz) ? hd : hw) * 0.6;
+    return [-1, 0, 1].map(t => {
+      let lx = Math.max(-hw+0.5, Math.min(hw-0.5, faceLx + tanLx*t*span));
+      let lz = Math.max(-hd+0.5, Math.min(hd-0.5, faceLz + tanLz*t*span));
+      return {x: b.x + lx*cosR - lz*sinR, z: b.z + lx*sinR + lz*cosR};
+    });
+  } else {
+    // Polygon: push center grid toward facade direction
+    return getBldSamplePts(b).slice(0, 3).map(p => ({x: p.x+wnx*4, z: p.z+wnz*4}));
+  }
+}
+
+// Raycast from facade-specific sample points and cache result
+function runFacadeRaycast(facadeAz) {
+  const {tgt, rawSlots, res} = lastAnalysisData;
+  const others = bldGroup.children.filter(m=>m.userData.bId && m.userData.bId!==tgt.id);
+  const fh=tgt.fh||3, nSlots=rawSlots.length, floors=res.length;
+  const slotDirs = rawSlots.map(s => {
+    const azR=s.az*DEG, altR=s.alt*DEG;
+    return new THREE.Vector3(
+      Math.sin(azR)*Math.cos(altR), Math.sin(altR), -Math.cos(azR)*Math.cos(altR)
+    ).normalize();
+  });
+  const samplePts = getPerimeterSamplePts(tgt, facadeAz);
+  const nPts = samplePts.length;
+  const facadeHits = [];
+  for (let f=0; f<floors; f++) {
+    const fy = (f+0.5)*fh;
+    const hits = new Uint8Array(nSlots);
+    for (let si=0; si<nSlots; si++) {
+      let clr=0;
+      samplePts.forEach(pt => {
+        rc.set(new THREE.Vector3(pt.x, fy, pt.z), slotDirs[si]);
+        if (!rc.intersectObjects(others, false).length) clr++;
+      });
+      hits[si] = clr/nPts >= 0.5 ? 1 : 0;
+    }
+    facadeHits.push(hits);
+  }
+  lastAnalysisData.facadeHitsMap[facadeAz] = facadeHits;
+  recolorSlabs();
 }
 
 function runFloorAnalysis() {
@@ -1227,7 +1289,7 @@ function runFloorAnalysis() {
     analysisSlabMeshes.push(sm);
   }
 
-  lastAnalysisData = {tgt, res, rawSlots, floorSlotHits};
+  lastAnalysisData = {tgt, res, rawSlots, floorSlotHits, facadeHitsMap: {}};
   analysisCurMode = 'annual';
   analysisFacade = null;
   showAnalysisResult('annual');
@@ -1252,7 +1314,11 @@ function switchAnalysisMode(mode) {
 function switchFacade(az) {
   if (!lastAnalysisData) return;
   analysisFacade = az;
-  recolorSlabs();
+  if (az !== null && !lastAnalysisData.facadeHitsMap[az]) {
+    runFacadeRaycast(az); // re-raycast from facade-side points, then recolorSlabs
+  } else {
+    recolorSlabs();
+  }
 }
 
 function facadeName(az) {
