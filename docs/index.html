@@ -628,16 +628,21 @@ function buildMesh(b, idx) {
     const winH = Math.max(0.25, fh * 0.22);
     const winMat = new THREE.MeshLambertMaterial({ color: WIN_COLOR, transparent: true, opacity: 0.72, side: THREE.DoubleSide });
     const pts = b.pts, n = pts.length;
+    // Detect winding via shoelace — CCW gives positive signed area in XZ
+    let signedArea = 0;
+    for (let i = 0; i < n; i++) { const j=(i+1)%n; signedArea += pts[i].x*pts[j].z - pts[j].x*pts[i].z; }
+    const windSign = signedArea > 0 ? 1 : -1; // +1=CCW, -1=CW → flip normal for CW
     for (let ei = 0; ei < n; ei++) {
       const A = pts[ei], B = pts[(ei + 1) % n];
       const dx = B.x - A.x, dz = B.z - A.z;
       const len = Math.sqrt(dx*dx + dz*dz);
       if (len < 0.5) continue;
       const cx = (A.x + B.x) / 2, cz = (A.z + B.z) / 2;
-      const nx = dz / len, nz = -dx / len;        // outward normal (CCW winding)
-      const angle = Math.atan2(-dz, dx);           // align plane width with edge dir
+      const nx = windSign * dz / len;   // outward normal (corrected for winding)
+      const nz = windSign * -dx / len;
+      const angle = Math.atan2(-dz, dx);
       for (let f = 1; f <= floors; f++) {
-        const wy = f * fh - fh * 0.5;             // polygon mesh: y=0 at ground
+        const wy = f * fh - fh * 0.5;
         const wm = new THREE.Mesh(new THREE.PlaneGeometry(len * 0.78, winH), winMat);
         wm.position.set(cx + nx * 0.03, wy, cz + nz * 0.03);
         wm.rotation.y = angle;
