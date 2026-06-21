@@ -485,7 +485,7 @@ function updateSun() {
   sun.intensity = 0.4 + 1.3 * t;
   ambient.intensity = 0.25 + 0.3 * t;
   const azR = az * DEG, altR = alt * DEG, D = 900;
-  sun.position.set(-Math.sin(azR)*Math.cos(altR)*D, Math.sin(altR)*D, -Math.cos(azR)*Math.cos(altR)*D);
+  sun.position.set(Math.sin(azR)*Math.cos(altR)*D, Math.sin(altR)*D, -Math.cos(azR)*Math.cos(altR)*D);
   const c = centroid();
   sun.target.position.copy(c);
   sun.target.updateMatrixWorld();
@@ -792,10 +792,10 @@ function runFloorAnalysis() {
         const {alt,az}=calcSun(d,h*60,lat);
         if (alt<2) continue;
         const azR=az*DEG,altR=alt*DEG;
-        const dir=new THREE.Vector3(Math.sin(azR)*Math.cos(altR),-Math.sin(altR),Math.cos(azR)*Math.cos(altR)).normalize();
+        const dir=new THREE.Vector3(Math.sin(azR)*Math.cos(altR),Math.sin(altR),-Math.cos(azR)*Math.cos(altR)).normalize();
         const spts=[new THREE.Vector3(tgt.x-(tgt.w||20)*0.3,fy,tgt.z),new THREE.Vector3(tgt.x,fy,tgt.z),new THREE.Vector3(tgt.x+(tgt.w||20)*0.3,fy,tgt.z)];
         let clr=0;
-        spts.forEach(pt=>{ rc.set(pt,dir.clone().negate()); if(!rc.intersectObjects(others,false).length) clr++; });
+        spts.forEach(pt=>{ rc.set(pt,dir); if(!rc.intersectObjects(others,false).length) clr++; });
         if (clr>=2) total+=0.5;
       }
     });
