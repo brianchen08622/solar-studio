@@ -223,6 +223,7 @@ select:focus{outline:none;border-color:#7CB87C}
     <div id="view-tog">
       <button class="vbtn active" id="vb3d" onclick="setViewMode('3d')">3D</button>
       <button class="vbtn" id="vbplan" onclick="setViewMode('plan')">平面</button>
+      <button class="vbtn" onclick="faceNorth()" title="朝正北">⬆N</button>
     </div>
     <div id="sun-info">方位角 <span class="si-val" id="si-az">—</span><br>仰角 <span class="si-val" id="si-alt">—</span></div>
     <div id="hint">左鍵選取/移動 · 右鍵旋轉視角 · 滾輪縮放 · Del 刪除</div>
@@ -345,8 +346,9 @@ scene.fog = new THREE.FogExp2(0x0A0E13, 0.0007);
 const perspCam = new THREE.PerspectiveCamera(45, 1, 0.5, 3000);
 const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2000);
 orthoCam.position.set(0, 500, 0);
-orthoCam.lookAt(0, 0, 0);
+orthoCam.rotation.x = -Math.PI / 2; // look straight down, no gimbal-lock degenerate
 orthoCam.zoom = 1;
+let orthoPan = {x:0, z:0};
 
 let camSph = { th: -0.5, ph: 0.85, r: 340 };
 let camTarget = new THREE.Vector3(0, 0, 0);
@@ -1039,7 +1041,8 @@ function onTM(e) {
     const cx=(e.touches[0].clientX+e.touches[1].clientX)/2;
     const cy=(e.touches[0].clientY+e.touches[1].clientY)/2;
     // Pan from two-finger drag center movement
-    panCam((cx-touchSt.cx)*2, (cy-touchSt.cy)*2);
+    if(viewMode==='plan') panOrthoCam((cx-touchSt.cx)*2,(cy-touchSt.cy)*2);
+    else panCam((cx-touchSt.cx)*2, (cy-touchSt.cy)*2);
     // Zoom from pinch distance change
     zoomCam((touchPinchD-d)*1.2);
     touchPinchD=d; touchSt.cx=cx; touchSt.cy=cy;
@@ -1070,7 +1073,9 @@ function onMD(e) {
 function onMM(e) {
   if(orbit) {
     const dx=e.clientX-orbit.x, dy=e.clientY-orbit.y;
-    if(orbit.type==='orbit') rotCam(dx,dy); else panCam(dx,dy);
+    if(orbit.type==='orbit') rotCam(dx,dy);
+    else if(viewMode==='plan') panOrthoCam(dx,dy);
+    else panCam(dx,dy);
     orbit.x=e.clientX; orbit.y=e.clientY; return;
   }
   if(scrDrag) return;
@@ -1114,6 +1119,14 @@ function rotCam(dx,dy) {
   camSph.ph=Math.max(0.05,Math.min(Math.PI*0.48,camSph.ph-dy*0.006));
   updateCam();
 }
+function panOrthoCam(dx, dy) {
+  const vp = document.getElementById('viewport');
+  const aspect = vp.clientWidth / vp.clientHeight;
+  const range = 300 / orthoCam.zoom;
+  orthoPan.x -= dx * (range * 2 * aspect) / vp.clientWidth;
+  orthoPan.z -= dy * (range * 2) / vp.clientHeight;
+}
+
 function panCam(dx,dy) {
   const r=new THREE.Vector3(), fwd=new THREE.Vector3().subVectors(camTarget,perspCam.position).normalize();
   r.crossVectors(new THREE.Vector3(0,1,0),fwd).normalize();
@@ -1166,6 +1179,13 @@ new ResizeObserver(resize).observe(document.getElementById('viewport'));
 resize();
 
 // ── Compass update ──
+function faceNorth() {
+  // Reset theta so camera looks from South toward North (-Z direction)
+  camSph.th = 0;
+  camSph.ph = 0.85;
+  updateCam();
+}
+
 function updateCompass() {
   // camSph.th: when th=0 camera is at +Z, North (-Z) is "ahead" = up on screen
   // Rotating camera counterclockwise (th increasing) moves North to the right on screen
@@ -1188,6 +1208,8 @@ function loop() {
     orthoCam.left=-range*aspect; orthoCam.right=range*aspect;
     orthoCam.top=range; orthoCam.bottom=-range;
     orthoCam.updateProjectionMatrix();
+    orthoCam.position.x = orthoPan.x;
+    orthoCam.position.z = orthoPan.z;
   }
   updateCompass();
   renderer.render(scene,viewMode==='plan'?orthoCam:perspCam);
