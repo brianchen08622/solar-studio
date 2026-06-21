@@ -1085,46 +1085,114 @@ function setTime(h) {
 // ── Floor analysis ──
 const rc = new THREE.Raycaster();
 
+// Point-in-polygon test in XZ plane
+function ptInPoly(px, pz, poly) {
+  let inside = false;
+  for (let i=0, j=poly.length-1; i<poly.length; j=i++) {
+    const xi=poly[i].x, zi=poly[i].z, xj=poly[j].x, zj=poly[j].z;
+    if (((zi>pz)!==(zj>pz)) && (px < (xj-xi)*(pz-zi)/(zj-zi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+
+// 3×3 sample grid in world XZ, filtered to building footprint
+function getBldSamplePts(b) {
+  const N = 3;
+  if (b.type==='polygon' && b.pts && b.pts.length>=3) {
+    const xs=b.pts.map(p=>p.x), zs=b.pts.map(p=>p.z);
+    const x0=Math.min(...xs), x1=Math.max(...xs), z0=Math.min(...zs), z1=Math.max(...zs);
+    const pts=[];
+    for (let i=0;i<N;i++) for (let j=0;j<N;j++) {
+      const lx=x0+(x1-x0)*(i+0.5)/N, lz=z0+(z1-z0)*(j+0.5)/N;
+      if (ptInPoly(lx,lz,b.pts)) pts.push({x:b.x+lx, z:b.z+lz});
+    }
+    return pts.length ? pts : [{x:b.x, z:b.z}];
+  }
+  const w=(b.w||20)*0.55, d=(b.d||15)*0.55;
+  const pts=[];
+  for (let i=0;i<N;i++) for (let j=0;j<N;j++)
+    pts.push({x:b.x+(-w/2+w*i/(N-1)), z:b.z+(-d/2+d*j/(N-1))});
+  return pts;
+}
+
+// Build a coloured analysis slab at floor centre fy
+function makeAnalysisSlab(b, fy, fh, col) {
+  const slabH = fh * 0.65;
+  let geo;
+  if (b.type==='polygon' && b.pts && b.pts.length>=3) {
+    const shape = new THREE.Shape();
+    shape.moveTo(b.pts[0].x, -b.pts[0].z);
+    for (let i=1;i<b.pts.length;i++) shape.lineTo(b.pts[i].x, -b.pts[i].z);
+    shape.closePath();
+    geo = new THREE.ExtrudeGeometry(shape, {depth:slabH, bevelEnabled:false});
+    geo.rotateX(-Math.PI/2);
+  } else {
+    geo = new THREE.BoxGeometry(b.w||20, slabH, b.d||15);
+  }
+  const sm = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color:col, transparent:true, opacity:0.65}));
+  // For box: mesh centred at fy; for polygon: extrusion starts at y=0, offset so centre = fy
+  sm.position.set(b.x, b.type==='polygon' ? fy-slabH/2 : fy, b.z);
+  sm.rotation.y = (b.ry||0)*DEG;
+  return sm;
+}
+
 function runFloorAnalysis() {
   clearSlabs();
   if (!selectedId) { alert('請先選取建物'); return; }
   const tgt = buildings.find(b=>b.id===selectedId);
   if (!tgt) return;
-  const others = bldGroup.children.filter(m=>m.userData.bId&&m.userData.bId!==selectedId);
+
+  const others = bldGroup.children.filter(m=>m.userData.bId && m.userData.bId!==selectedId);
   const fh=tgt.fh||3, floors=Math.max(1,Math.floor(tgt.h/fh));
-  const dates=[{l:'冬至',d:new Date().getFullYear()+'-12-22'},{l:'春分',d:new Date().getFullYear()+'-03-21'},{l:'夏至',d:new Date().getFullYear()+'-06-21'}];
-  const res=[];
-  for (let f=0;f<floors;f++) {
-    const fy=(f+0.5)*fh;
-    let total=0;
-    dates.forEach(({d})=>{
-      for (let h=6;h<=18;h+=0.5) {
-        const {alt,az}=calcSun(d,h*60,lat);
+
+  // 12 representative days: 21st of every month
+  const y = new Date().getFullYear();
+  const dates = [1,2,3,4,5,6,7,8,9,10,11,12]
+    .map(m=>`${y}-${String(m).padStart(2,'0')}-21`);
+
+  const samplePts = getBldSamplePts(tgt);
+  const nPts = samplePts.length;
+  const res = [];
+
+  for (let f=0; f<floors; f++) {
+    const fy = (f+0.5)*fh;
+    let totalHits = 0;
+
+    dates.forEach(dateStr=>{
+      for (let h=6; h<=18; h+=0.5) {
+        const {alt,az} = calcSun(dateStr, h*60, lat);
         if (alt<2) continue;
-        const azR=az*DEG,altR=alt*DEG;
-        const dir=new THREE.Vector3(Math.sin(azR)*Math.cos(altR),Math.sin(altR),-Math.cos(azR)*Math.cos(altR)).normalize();
-        const spts=[new THREE.Vector3(tgt.x-(tgt.w||20)*0.3,fy,tgt.z),new THREE.Vector3(tgt.x,fy,tgt.z),new THREE.Vector3(tgt.x+(tgt.w||20)*0.3,fy,tgt.z)];
+        const azR=az*DEG, altR=alt*DEG;
+        const dir = new THREE.Vector3(
+          Math.sin(azR)*Math.cos(altR), Math.sin(altR), -Math.cos(azR)*Math.cos(altR)
+        ).normalize();
         let clr=0;
-        spts.forEach(pt=>{ rc.set(pt,dir); if(!rc.intersectObjects(others,false).length) clr++; });
-        if (clr>=2) total+=0.5;
+        samplePts.forEach(pt=>{
+          rc.set(new THREE.Vector3(pt.x,fy,pt.z), dir);
+          if (!rc.intersectObjects(others,false).length) clr++;
+        });
+        // Majority-vote: floor is sunny if >50% of sample points are clear
+        if (clr/nPts >= 0.5) totalHits += 0.5;
       }
     });
-    const avg=Math.round(total/3*10)/10;
-    res.push({f:f+1,h:avg});
-    const t=Math.max(0,Math.min(1,avg/8));
-    const col=new THREE.Color().setHSL(t*0.33,0.85,0.45);
-    const sg=new THREE.BoxGeometry(tgt.w||20,fh*0.65,tgt.d||15);
-    const sm=new THREE.Mesh(sg,new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.65}));
-    sm.position.set(tgt.x,fy,tgt.z);
-    slabGroup.add(sm);
+
+    const avg = Math.round(totalHits/dates.length*10)/10;
+    res.push({f:f+1, h:avg});
+    const t = Math.max(0,Math.min(1,avg/8));
+    const col = new THREE.Color().setHSL(t*0.33, 0.85, 0.45);
+    slabGroup.add(makeAnalysisSlab(tgt, fy, fh, col));
   }
-  showAnalysisResult(res, tgt.name);
+
+  showAnalysisResult(res, tgt.name||'建物');
   document.getElementById('ao').style.display='block';
 }
 
 function showAnalysisResult(res, name) {
-  const maxH=Math.max(...res.map(r=>r.h),0.1);
-  const html=`<div style="font-size:10px;color:#7A9A7A;margin-bottom:6px">${name} · ${res.length}層</div>`+
+  const maxH = Math.max(...res.map(r=>r.h), 0.1);
+  const avg = Math.round(res.reduce((s,r)=>s+r.h,0)/res.length*10)/10;
+  const html =
+    `<div style="font-size:10px;color:#7A9A7A;margin-bottom:4px">${name} · ${res.length}層 · 年均 <b style="color:#A0C8A0">${avg}h</b>/日</div>`+
+    `<div style="font-size:9px;color:#5A7A5A;margin-bottom:6px">日照時數（12代表日平均，每日6–18時）</div>`+
     res.map(r=>`<div class="fb-row"><span class="fb-lbl">${r.f}F</span><div class="fb-track"><div class="fb-fill" style="width:${r.h/maxH*100}%;background:hsl(${Math.round(r.h/8*120)},70%,45%)"></div></div><span class="fb-val">${r.h}h</span></div>`).join('');
   document.getElementById('analysis-result').innerHTML=html;
   document.getElementById('ao-body').innerHTML=html;
