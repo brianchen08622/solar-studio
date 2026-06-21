@@ -1153,6 +1153,7 @@ function slabColor(hours, mode) {
 // Core per-slot hours calculator — works without lastAnalysisData
 function _computeHours(hits, rawSlots, mode, facadeAz) {
   const sMonths = mode==='winter'?[11,0,1]:mode==='summer'?[5,6,7]:null;
+  const nMonths = sMonths ? sMonths.length : 12; // divide to get per-day average
   let count = 0;
   for (let si=0; si<hits.length; si++) {
     if (!hits[si]) continue;
@@ -1165,7 +1166,7 @@ function _computeHours(hits, rawSlots, mode, facadeAz) {
     }
     count++;
   }
-  return Math.round(count * 0.5 * 10) / 10;
+  return Math.round(count * 0.5 / nMonths * 10) / 10;
 }
 
 function computeFloorHours(floorIdx, mode, facadeAz) {
