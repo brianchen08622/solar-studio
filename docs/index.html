@@ -767,7 +767,7 @@ function setTool(t) {
   document.querySelectorAll('.tool-btn').forEach(e=>e.classList.remove('active'));
   const el=document.getElementById('tb-'+t); if(el) el.classList.add('active');
   if (t!=='polygon') cancelPoly();
-  const hints = { select:'左鍵選取/移動 · 右鍵旋轉視角 · 滾輪縮放 · Del 刪除', add:'左鍵拖曳設定建物範圍 · 右鍵旋轉視角', polygon:'點擊新增頂點 · 雙擊完成多邊形 · Esc 取消' };
+  const hints = { select:'左鍵選取/移動 · 右鍵旋轉 · Shift+右鍵/中鍵平移 · 滾輪縮放 · Del 刪除', add:'左鍵拖曳設定建物範圍 · 右鍵旋轉 · Shift+右鍵平移', polygon:'點擊新增頂點 · 雙擊完成多邊形 · Esc 取消' };
   document.getElementById('hint').textContent = hints[t]||'';
 }
 
@@ -1016,10 +1016,14 @@ let touchSt=null, touchPinchD=0;
 
 function onTS(e) {
   e.preventDefault();
-  if(e.touches.length===1) touchSt={type:'one',x:e.touches[0].clientX,y:e.touches[0].clientY};
-  else if(e.touches.length===2) {
+  if(e.touches.length===1) {
+    touchSt={type:'one',x:e.touches[0].clientX,y:e.touches[0].clientY};
+  } else if(e.touches.length===2) {
     const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
-    touchPinchD=Math.sqrt(dx*dx+dy*dy); touchSt={type:'two'};
+    touchPinchD=Math.sqrt(dx*dx+dy*dy);
+    touchSt={type:'two',
+      cx:(e.touches[0].clientX+e.touches[1].clientX)/2,
+      cy:(e.touches[0].clientY+e.touches[1].clientY)/2};
   }
 }
 function onTM(e) {
@@ -1027,23 +1031,35 @@ function onTM(e) {
   if(!touchSt) return;
   if(touchSt.type==='one'&&e.touches.length===1) {
     const dx=e.touches[0].clientX-touchSt.x, dy=e.touches[0].clientY-touchSt.y;
-    rotCam(dx*0.4,dy*0.4); touchSt.x=e.touches[0].clientX; touchSt.y=e.touches[0].clientY;
+    rotCam(dx*0.4,dy*0.4);
+    touchSt.x=e.touches[0].clientX; touchSt.y=e.touches[0].clientY;
   } else if(touchSt.type==='two'&&e.touches.length===2) {
     const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
     const d=Math.sqrt(dx*dx+dy*dy);
-    zoomCam((touchPinchD-d)*1.2); touchPinchD=d;
+    const cx=(e.touches[0].clientX+e.touches[1].clientX)/2;
+    const cy=(e.touches[0].clientY+e.touches[1].clientY)/2;
+    // Pan from two-finger drag center movement
+    panCam((cx-touchSt.cx)*2, (cy-touchSt.cy)*2);
+    // Zoom from pinch distance change
+    zoomCam((touchPinchD-d)*1.2);
+    touchPinchD=d; touchSt.cx=cx; touchSt.cy=cy;
   }
 }
 function onTE(){touchSt=null;}
 
 function onMD(e) {
-  if(e.button===2||e.button===1){orbit={type:e.button===1?'pan':'orbit',x:e.clientX,y:e.clientY};return;}
+  if(e.button===2||e.button===1){
+    // Middle btn = pan; Right btn = orbit, but Shift+right or plan-view right = pan
+    const isPan = e.button===1 || e.shiftKey || viewMode==='plan';
+    orbit={type:isPan?'pan':'orbit',x:e.clientX,y:e.clientY};
+    return;
+  }
   if(tool==='polygon'){handlePolyClick(e);return;}
   const xy=getCanvasXY(e), hit=getBldHit(xy);
   if(tool==='select') {
     if(hit) { bldDrag=hit.id; bldDragOff={x:hit.pt.x-buildings.find(b=>b.id===hit.id).x,z:hit.pt.z-buildings.find(b=>b.id===hit.id).z}; wasDrag=false; selectedId=hit.id; rebuildScene(); updatePropsPanel(); return; }
     selectedId=null; rebuildScene(); updatePropsPanel();
-    orbit={type:'orbit',x:e.clientX,y:e.clientY};
+    orbit={type:(e.shiftKey||viewMode==='plan')?'pan':'orbit',x:e.clientX,y:e.clientY};
   }
   if(tool==='add') {
     const gp=getGround(xy);
