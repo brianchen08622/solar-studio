@@ -278,7 +278,8 @@ select:focus{outline:none;border-color:#7CB87C}
 <!-- Timeline -->
 <div id="timeline">
   <span class="tl-lbl">日期</span>
-  <input type="date" id="tl-date" onchange="updateSun()">
+  <input type="hidden" id="tl-date">
+  <button id="tl-date-btn" onclick="showDateModal()" style="background:rgba(124,184,124,0.1);border:1px solid rgba(124,184,124,0.3);color:#A0D8A0;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap">—</button>
   <div class="tl-wrap">
     <span class="tl-lbl">時刻</span>
     <input type="range" id="tl-slider" min="0" max="1440" value="720" oninput="onSlider()">
@@ -288,6 +289,41 @@ select:focus{outline:none;border-color:#7CB87C}
   <button class="spd-btn" id="spd-btn" onclick="cycleSpeed()">1×</button>
 </div>
 
+</div>
+
+<!-- Date picker modal -->
+<div id="date-modal" class="modal-bg" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" style="width:290px">
+    <div class="modal-title">📅 自訂日期</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-end">
+      <div style="flex:2">
+        <div style="font-size:10px;color:#6A8A6A;margin-bottom:4px">年</div>
+        <input type="number" id="dm-y" min="1990" max="2099" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(124,184,124,0.25);border-radius:5px;padding:6px 8px;color:#C0E8D0;font-size:14px;text-align:center">
+      </div>
+      <div style="flex:1">
+        <div style="font-size:10px;color:#6A8A6A;margin-bottom:4px">月</div>
+        <select id="dm-m" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(124,184,124,0.25);border-radius:5px;padding:6px 4px;color:#C0E8D0;font-size:13px;text-align:center">
+          <option>1</option><option>2</option><option>3</option><option>4</option>
+          <option>5</option><option>6</option><option>7</option><option>8</option>
+          <option>9</option><option>10</option><option>11</option><option>12</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:10px;color:#6A8A6A;margin-bottom:4px">日</div>
+        <select id="dm-d" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(124,184,124,0.25);border-radius:5px;padding:6px 4px;color:#C0E8D0;font-size:13px;text-align:center"></select>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="abtn" style="flex:1;text-align:center;padding:5px;margin:0" onclick="setDatePreset2('winter')">冬至</button>
+      <button class="abtn" style="flex:1;text-align:center;padding:5px;margin:0" onclick="setDatePreset2('equinox')">春分</button>
+      <button class="abtn" style="flex:1;text-align:center;padding:5px;margin:0" onclick="setDatePreset2('summer')">夏至</button>
+      <button class="abtn" style="flex:1;text-align:center;padding:5px;margin:0" onclick="setDatePreset2('today')">今天</button>
+    </div>
+    <div class="mbtn-row">
+      <button class="btn-cancel" onclick="document.getElementById('date-modal').style.display='none'">取消</button>
+      <button class="btn-ok" onclick="confirmDate()">確定</button>
+    </div>
+  </div>
 </div>
 
 <!-- Save modal -->
@@ -822,10 +858,62 @@ function cycleSpeed() {
   document.getElementById('spd-btn').textContent=PLAY_SPEEDS[playSpeedIdx]+'×';
 }
 
+// ── Date modal ──
+function showDateModal() {
+  const cur = document.getElementById('tl-date').value || new Date().toISOString().slice(0,10);
+  const [y,m,d] = cur.split('-').map(Number);
+  document.getElementById('dm-y').value = y;
+  document.getElementById('dm-m').value = m;
+  updateDayOptions(m, y, d);
+  document.getElementById('dm-m').onchange = () => updateDayOptions(
+    parseInt(document.getElementById('dm-m').value),
+    parseInt(document.getElementById('dm-y').value)
+  );
+  document.getElementById('date-modal').style.display = 'flex';
+  setTimeout(()=>document.getElementById('dm-y').focus(), 50);
+}
+
+function updateDayOptions(m, y, sel) {
+  const days = new Date(y, m, 0).getDate();
+  const el = document.getElementById('dm-d');
+  const prev = sel || parseInt(el.value) || 1;
+  el.innerHTML = Array.from({length:days},(_,i)=>`<option${i+1===prev?' selected':''}>${i+1}</option>`).join('');
+}
+
+function confirmDate() {
+  const y = parseInt(document.getElementById('dm-y').value);
+  const m = parseInt(document.getElementById('dm-m').value);
+  const d = parseInt(document.getElementById('dm-d').value);
+  if (!y || !m || !d) return;
+  const dateStr = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  document.getElementById('tl-date').value = dateStr;
+  updateDateBtn(dateStr);
+  document.getElementById('date-modal').style.display = 'none';
+  updateSun();
+}
+
+function updateDateBtn(dateStr) {
+  if (!dateStr) return;
+  const [y,m,d] = dateStr.split('-');
+  document.getElementById('tl-date-btn').textContent = `${y}/${m}/${d}`;
+}
+
+function setDatePreset2(p) {
+  const y = parseInt(document.getElementById('dm-y').value) || new Date().getFullYear();
+  const presets = { winter:`${y}-12-22`, equinox:`${y}-03-21`, summer:`${y}-06-21`, today:new Date().toISOString().slice(0,10) };
+  const s = presets[p].split('-').map(Number);
+  document.getElementById('dm-y').value = s[0];
+  document.getElementById('dm-m').value = s[1];
+  updateDayOptions(s[1], s[0], s[2]);
+}
+
 function setPreset(p) {
   const y=new Date().getFullYear();
   const map={winter:`${y}-12-22`,equinox:`${y}-03-21`,summer:`${y}-06-21`};
-  document.getElementById('tl-date').value=map[p]; updateSun();
+  const dateStr=map[p];
+  document.getElementById('tl-date').value=dateStr;
+  updateDateBtn(dateStr);
+  updateSun();
 }
 
 function setTime(h) {
@@ -924,7 +1012,7 @@ function loadProject(i) {
   currentProj=p.name;
   document.getElementById('proj-name-label').textContent=p.name;
   document.getElementById('lat-inp').value=lat;
-  if(p.dateStr) document.getElementById('tl-date').value=p.dateStr;
+  if(p.dateStr){document.getElementById('tl-date').value=p.dateStr;updateDateBtn(p.dateStr);}
   if(p.timeMin!=null){document.getElementById('tl-slider').value=p.timeMin;playMin=p.timeMin;document.getElementById('tl-val').textContent=fmt(p.timeMin);}
   selectedId=null;
   document.getElementById('proj-modal').style.display='none';
@@ -1217,7 +1305,9 @@ function loop() {
 
 // ── Init ──
 const today=new Date();
-document.getElementById('tl-date').value=today.toISOString().slice(0,10);
+const todayStr=today.toISOString().slice(0,10);
+document.getElementById('tl-date').value=todayStr;
+updateDateBtn(todayStr);
 document.getElementById('tl-slider').value=720;
 document.getElementById('tl-val').textContent='12:00';
 playMin=720;
