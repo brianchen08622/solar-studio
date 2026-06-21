@@ -385,10 +385,10 @@ const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'),
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.setClearColor(0xB8D8E4);
+renderer.setClearColor(0xC8E4F0);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0xC4DCEC, 0.0010);
+scene.fog = new THREE.FogExp2(0xCCE8F4, 0.0007);
 
 // ── Cameras ──
 const perspCam = new THREE.PerspectiveCamera(45, 1, 0.5, 3000);
@@ -413,9 +413,9 @@ function updateCam() {
 updateCam();
 
 // ── Lights ──
-const ambient = new THREE.AmbientLight(0xA8C4D8, 0.9);
+const ambient = new THREE.AmbientLight(0xD0E8F4, 1.4);
 scene.add(ambient);
-const sun = new THREE.DirectionalLight(0xFFF8EE, 1.4);
+const sun = new THREE.DirectionalLight(0xFFFDF8, 1.0);
 sun.castShadow = true;
 sun.shadow.mapSize.set(4096, 4096);
 sun.shadow.camera.near = 1;
@@ -567,10 +567,10 @@ function updateSun() {
   const { alt, az } = calcSun(dateStr, min, lat);
   document.getElementById('si-az').textContent = az.toFixed(1) + '°';
   document.getElementById('si-alt').textContent = alt.toFixed(1) + '°';
-  if (alt <= 0) { sun.intensity = 0; ambient.intensity = 0.5; return; }
+  if (alt <= 0) { sun.intensity = 0; ambient.intensity = 0.9; return; }
   const t = Math.min(alt / 30, 1);
-  sun.intensity = 0.5 + 1.0 * t;
-  ambient.intensity = 0.6 + 0.4 * t;
+  sun.intensity = 0.3 + 0.7 * t;
+  ambient.intensity = 1.0 + 0.4 * t;
   const azR = az * DEG, altR = alt * DEG, D = 900;
   sun.position.set(Math.sin(azR)*Math.cos(altR)*D, Math.sin(altR)*D, -Math.cos(azR)*Math.cos(altR)*D);
   const c = centroid();
@@ -588,7 +588,8 @@ scene.add(bldGroup);
 const slabGroup = new THREE.Group();
 scene.add(slabGroup);
 
-const BLD_COLORS = [0xC4CED0,0xC0CBBC,0xCBC8BE,0xBEC8CC,0xC6CBC0,0xC2C8CC,0xC8CCBE,0xBEC6C4,0xCCC8C4,0xC0C8CC];
+const BLD_COLORS = [0xEEF0EC,0xECF0F2,0xF0ECEC,0xECEEF0,0xF0F0EC,0xECF0EE,0xEEECF0,0xF0EEEE,0xECECF0,0xF0ECF0];
+const WIN_COLOR = 0x7090B8; // window band colour
 
 function snapV(v) {
   if (!gridSnap) return Math.round(v*10)/10;
@@ -607,7 +608,7 @@ function buildMesh(b, idx) {
   } else {
     geo = new THREE.BoxGeometry(b.w||20, b.h, b.d||15);
   }
-  const mat = new THREE.MeshPhongMaterial({ color: BLD_COLORS[idx % BLD_COLORS.length], shininess:20, specular:0xCCCCCC });
+  const mat = new THREE.MeshLambertMaterial({ color: BLD_COLORS[idx % BLD_COLORS.length] });
   const mesh = new THREE.Mesh(geo, mat);
   if (b.type === 'polygon') mesh.position.set(b.x, 0, b.z);
   else mesh.position.set(b.x, b.h/2, b.z);
@@ -616,41 +617,63 @@ function buildMesh(b, idx) {
   mesh.receiveShadow = true;
   mesh.userData.bId = b.id;
 
-  // Floor markers every 10 floors
-  const fh = b.fh||3;
-  const floors = Math.floor(b.h/fh);
-  const hw = (b.w||20)/2, hd = (b.d||15)/2;
+  const fh = b.fh || 3;
+  const floors = Math.floor(b.h / fh);
+  const w = b.w || 20, d = b.d || 15;
+  const hw = w / 2, hd = d / 2;
 
-  // Build footprint: polygon pts or box corners
-  const footprint = (b.type==='polygon' && b.pts && b.pts.length>=3)
-    ? [...b.pts, b.pts[0]]                                          // closed polygon
-    : [{x:-hw,z:-hd},{x:hw,z:-hd},{x:hw,z:hd},{x:-hw,z:hd},{x:-hw,z:-hd}]; // box
-  const vertices = footprint.slice(0,-1); // unique vertices (no closing duplicate)
+  // ── Window bands (box buildings only) — one per floor ──
+  if (b.type !== 'polygon') {
+    const winH = Math.max(0.25, fh * 0.22);
+    const winMat = new THREE.MeshLambertMaterial({ color: WIN_COLOR, transparent: true, opacity: 0.72 });
+    for (let f = 1; f <= floors; f++) {
+      const wy = f * fh - fh * 0.5 - b.h / 2; // local Y (mesh centred at h/2)
+      // Front & back
+      [hd + 0.01, -(hd + 0.01)].forEach(oz => {
+        const wm = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.78, winH), winMat);
+        wm.position.set(0, wy, oz);
+        if (oz < 0) wm.rotation.y = Math.PI;
+        mesh.add(wm);
+      });
+      // Left & right
+      [hw + 0.01, -(hw + 0.01)].forEach(ox => {
+        const wm = new THREE.Mesh(new THREE.PlaneGeometry(d * 0.78, winH), winMat);
+        wm.position.set(ox, wy, 0);
+        wm.rotation.y = ox > 0 ? Math.PI / 2 : -Math.PI / 2;
+        mesh.add(wm);
+      });
+    }
+  }
 
-  const lineMat = new THREE.LineBasicMaterial({color:0x4A6070, depthTest:false});
-  const tickMat = new THREE.LineBasicMaterial({color:0x4A6070, depthTest:false});
-
-  for (let f=10; f<=floors; f+=10) {
-    const ly = f*fh - (b.type==='polygon' ? 0 : b.h/2);
-
-    // Horizontal outline — follows actual footprint shape
-    const hPts = footprint.map(p=>new THREE.Vector3(p.x, ly, p.z));
-    const hGeo = new THREE.BufferGeometry().setFromPoints(hPts);
-    const hLine = new THREE.Line(hGeo, lineMat);
-    hLine.userData.isMarker = true;
-    mesh.add(hLine);
-
-    // Vertical tick at every vertex → visible from any horizontal angle
-    const tk = Math.max(fh * 0.35, 0.8);
-    vertices.forEach(p=>{
-      const tGeo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(p.x, ly - tk, p.z),
-        new THREE.Vector3(p.x, ly + tk, p.z),
-      ]);
-      const tLine = new THREE.Line(tGeo, tickMat);
-      tLine.userData.isMarker = true;
-      mesh.add(tLine);
-    });
+  // ── 10-floor slab markers ──
+  const slabMat = new THREE.MeshLambertMaterial({ color: 0x8AAABB, transparent: true, opacity: 0.85 });
+  if (b.type !== 'polygon') {
+    // Box: thin BoxGeometry slab
+    for (let f = 10; f <= floors; f += 10) {
+      const sy = f * fh - b.h / 2;
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.22, d + 0.6), slabMat);
+      slab.position.set(0, sy, 0);
+      slab.userData.isMarker = true;
+      mesh.add(slab);
+    }
+  } else {
+    // Polygon: line outline + corner ticks (unchanged)
+    const footprint = [...b.pts, b.pts[0]];
+    const vertices = b.pts;
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x6080A0, depthTest: false });
+    for (let f = 10; f <= floors; f += 10) {
+      const ly = f * fh;
+      const hPts = footprint.map(p => new THREE.Vector3(p.x, ly, p.z));
+      mesh.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(hPts), lineMat));
+      const tk = Math.max(fh * 0.35, 0.8);
+      vertices.forEach(p => {
+        mesh.add(new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(p.x, ly - tk, p.z),
+            new THREE.Vector3(p.x, ly + tk, p.z),
+          ]), lineMat));
+      });
+    }
   }
   return mesh;
 }
