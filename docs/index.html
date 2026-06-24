@@ -1134,6 +1134,23 @@ function getBldSamplePts(b) {
 // Build a coloured analysis slab at floor centre fy
 function makeAnalysisSlab(b, fy, fh, col) {
   const slabH = fh * 0.65;
+  // When a specific facade direction is selected, show only a thin wall on that face
+  if (analysisFacade !== null && b.type !== 'polygon') {
+    const hw=(b.w||20)/2, hd=(b.d||15)/2;
+    const ry=(b.ry||0)*DEG, sinR=Math.sin(ry), cosR=Math.cos(ry);
+    const facRad=analysisFacade*DEG;
+    const wnx=Math.sin(facRad), wnz=-Math.cos(facRad);
+    const lnx=wnx*cosR+wnz*sinR, lnz=-wnx*sinR+wnz*cosR;
+    const faceW=(Math.abs(lnx)>Math.abs(lnz))?(b.d||15):(b.w||20);
+    const k=1/Math.max(Math.abs(lnx)/hw, Math.abs(lnz)/hd);
+    const fcLx=lnx*k, fcLz=lnz*k;
+    const offX=fcLx*cosR-fcLz*sinR, offZ=fcLx*sinR+fcLz*cosR;
+    const geo=new THREE.BoxGeometry(faceW, slabH, 0.4);
+    const sm=new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color:col, transparent:true, opacity:0.85}));
+    sm.position.set(b.x+offX, fy, b.z+offZ);
+    sm.rotation.y=Math.PI-facRad;
+    return sm;
+  }
   let geo;
   if (b.type==='polygon' && b.pts && b.pts.length>=3) {
     const shape = new THREE.Shape();
@@ -1146,7 +1163,6 @@ function makeAnalysisSlab(b, fy, fh, col) {
     geo = new THREE.BoxGeometry(b.w||20, slabH, b.d||15);
   }
   const sm = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color:col, transparent:true, opacity:0.65}));
-  // For box: mesh centred at fy; for polygon: extrusion starts at y=0, offset so centre = fy
   sm.position.set(b.x, b.type==='polygon' ? fy-slabH/2 : fy, b.z);
   sm.rotation.y = (b.ry||0)*DEG;
   return sm;
@@ -1298,26 +1314,28 @@ function runFloorAnalysis() {
     }
     floorSlotHits.push(hits);
     res.push({f: f+1});
-
-    const annual = _computeHours(hits, rawSlots, 'annual', null);
-    const sm = makeAnalysisSlab(tgt, fy, fh, slabColor(annual, 'annual'));
-    slabGroup.add(sm);
-    analysisSlabMeshes.push(sm);
   }
 
-  lastAnalysisData = {tgt, res, rawSlots, floorSlotHits, facadeHitsMap: {}};
+  lastAnalysisData = {tgt, res, rawSlots, floorSlotHits, facadeHitsMap: {}, fh};
   analysisCurMode = 'annual';
   analysisFacade = null;
-  showAnalysisResult('annual');
+  recolorSlabs();
   document.getElementById('ao').style.display='block';
 }
 
 function recolorSlabs() {
   if (!lastAnalysisData) return;
+  const {tgt, fh, floorSlotHits} = lastAnalysisData;
   const mode = analysisCurMode, facade = analysisFacade;
-  analysisSlabMeshes.forEach((sm, i) => {
-    sm.material.color.copy(slabColor(computeFloorHours(i, mode, facade), mode));
-  });
+  const floors = floorSlotHits.length;
+  clearSlabs();
+  analysisSlabMeshes = [];
+  for (let f=0; f<floors; f++) {
+    const fy = (f+0.5)*fh;
+    const sm = makeAnalysisSlab(tgt, fy, fh, slabColor(computeFloorHours(f, mode, facade), mode));
+    slabGroup.add(sm);
+    analysisSlabMeshes.push(sm);
+  }
   showAnalysisResult(mode);
 }
 
